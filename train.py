@@ -168,11 +168,11 @@ def finetune_HEST_data(patches_path, adata_path, train_samples, val_samples, gen
 
     hyperparams_dict: batch_size, learning_rate, epochs
     '''
-    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_items, gene_list_path, transform)
+    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_samples, gene_list_path, transforms)
     batch_size=hyperparams_dict['batch_size'] 
     train_loader=DataLoader(train_dset, batch_size=batch_size, shuffle=True)
     
-    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list_path, transform)
+    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list_path, transforms)
     val_loader=DataLoader(val_dset, batch_size=batch_size)
 
     device=torch.device('cuda')
@@ -196,11 +196,11 @@ def distill_HEST_data(patches_path, adata_path, train_samples, val_samples, gene
 
     hyperparams_dict: batch_size, learning_rate, epochs
     '''
-    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_samples, gene_list_path, transform)
+    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_samples, gene_list_path, transforms)
     batch_size=hyperparams_dict['batch_size'] 
     train_loader=DataLoader(train_dset, batch_size=batch_size, shuffle=True)
     
-    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list_path, transform)
+    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list_path, transforms)
     val_loader=DataLoader(val_dset, batch_size=batch_size)
 
     device=torch.device('cuda')

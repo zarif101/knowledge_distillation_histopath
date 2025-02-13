@@ -45,7 +45,7 @@ def finetune_UNI2_HEST():
     samples=[item.split('.')[0] for item in files]
     train_items,val_items=train_test_split(samples,test_size=0.3, random_state=42)
 
-    train.finetune_HEST_data(patches_path, adata_path, train_items, val_items, gene_list_path, gene_list_path, log_dir, model, transforms,
+    train.finetune_HEST_data(patches_path, adata_path, train_items, val_items, gene_list_path, log_dir, model, transforms,
                             loss_fn, hyperparams_dict)
 
 def distill_tinyvit_UNI2_HEST():
@@ -68,5 +68,5 @@ def distill_tinyvit_UNI2_HEST():
     samples=[item.split('.')[0] for item in files]
     train_items,val_items=train_test_split(samples,test_size=0.3, random_state=42)
 
-    train.distill_HEST_data(patches_path, adata_path, train_items, val_items, gene_list_path, gene_list_path, log_dir, teacher_model,
+    train.distill_HEST_data(patches_path, adata_path, train_items, val_items, gene_list_path, log_dir, teacher_model,
                             student_model, transforms, loss_fn, hyperparams_dict)

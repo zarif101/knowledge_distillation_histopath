@@ -49,6 +49,7 @@ def load_model_and_transform_UNI2(huggingface_key, num_classes):
        'reg_tokens': 8, 
        'dynamic_img_size': True
       }
+    login(huggingface_key)
     uni_transforms = transforms.Compose(
         [
             transforms.Resize(224),
@@ -61,4 +62,43 @@ def load_model_and_transform_UNI2(huggingface_key, num_classes):
 
 def load_tiny_vit_5m_224(pretrained=False,num_classes=100):
     return tiny_vit_5m_224(pretrained=pretrained,num_classes=num_classes)
+
+# By default, cannot "add in" an output layer with defined size to the end of Virchow2, using the HF import. Thus, adding one in ourselves, trainable layer.
+class Virchow2Extended(nn.Module):
+    def __init__(self, base_model, output_dim):
+        super().__init__()
+        self.base_model = base_model  # Pretrained Virchow2 model
+        self.fc = nn.Linear(2560, output_dim)  # Map embedding to output_dim
+
+    def forward(self, image):
+        output = self.base_model(image)  # size: 1 x 261 x 1280
+
+        class_token = output[:, 0]    # size: 1 x 1280
+        patch_tokens = output[:, 5:]  # size: 1 x 256 x 1280
+
+        # Compute final embedding
+        embedding = torch.cat([class_token, patch_tokens.mean(1)], dim=-1)  # size: 1 x 2560
+
+        # Pass through the linear layer
+        out = self.fc(embedding)  # size: 1 x output_dim
+        return out
+        
+def load_model_and_transform_VIRCHOW2(huggingface_key, num_classes):
+    '''
+    Load Virchow2 model and associated transforms. Adds on a classification layer at the end, as default Virchow is just a frozen feature extractor.
+
+    huggingface_key (ex: hf12p312312): private key from HuggingFace required to access this model (get from HuggingFace if you don't have one)
+
+    Example usage:
+    hf_key = "hf131231990123"
+    virchow_model, virchow_transforms = load_model_and_transform_VIRCHOW2(hf_key, num_classes=100)
+    '''
+    from timm.layers import SwiGLUPacked
+    login(huggingface_key)
+    base_model = timm.create_model("hf-hub:paige-ai/Virchow2", pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
+    model=Virchow2Extended(base_model=base_model,output_dim=num_classes)
+    virchow_transforms = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
+    
+    return model, virchow_transforms
+
     

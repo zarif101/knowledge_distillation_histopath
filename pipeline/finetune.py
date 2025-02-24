@@ -50,6 +50,7 @@ from ..utils import custom_losses
 # Model loading function mapping
 MODEL_LOADERS = {
     "UNI2": models.load_model_and_transform_UNI2,
+    "VIRCHOW2": models.load_model_and_transform_VIRCHOW2
     # Future models can be added here
 }
 

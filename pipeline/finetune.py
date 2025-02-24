@@ -42,10 +42,10 @@ from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 
-from . import data_utils
-from . import models
-from . import train
-from . import custom_losses
+from ..utils import data_utils
+from ..modeling import models
+from ..utils import train
+from ..utils import custom_losses
 
 # Model loading function mapping
 MODEL_LOADERS = {

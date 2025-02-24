@@ -25,7 +25,8 @@ import pickle
 import torch.nn.functional as F
 
 from . import data_utils
-from . import models
+#import data_utils
+from ..modeling import models
 from . import custom_losses
 
 def train_single(model, train_loader, val_loader, loss_fn, optim, epochs, device, log_path, save_dir):
@@ -127,39 +128,13 @@ def eval_single(model, val_loader, loss_fn, device):
             imgs = imgs.to(device)
             y_true = y_true.to(device)
             preds=model(imgs)
-            loss=loss_fn(y_true,exp_true)
+            loss=loss_fn(y_true,y_true)
             val_loss+=loss.item()
             all_true.append(exp_true.detach().cpu().numpy())
             all_pred.append(preds.detach().cpu().numpy())
     val_loss/=len(val_loader)
     model.train()
     return val_loss, all_true, all_pred
-
-def finetune_HEST_data(patches_path, adata_path, train_samples, val_samples, gene_list_path, log_dir, model, transforms):
-    '''
-    Finetune a foundation model (ex: UNI2) on HEST data. Task: Infer gene expression profiles from input patches
-    '''
-    dataset = STPatchDatasetHEST(patches_path, adata_path, train_items, gene_list_path, transform)
-    batch_size=16 #somewhat arbitrary, can allow configuration
-    train_dset=PatchDataset(patches_path, adata_path, train_samples, transform)
-    train_loader=DataLoader(train_dset, batch_size=batch_size, shuffle=True)
-    
-    val_dset=PatchDataset(patches_path, adata_path, val_samples, transform)
-    val_loader=DataLoader(val_dset, batch_size=batch_size)
-
-    device=torch.device('cuda')
-    # Can make the following configurable
-    loss_fn=torch.nn.MSELoss()
-    LR=0.0001
-    optim=torch.optim.Adam(model.parameters(),lr=LR)
-    epochs=100
-    log_path = log_dir+"log.txt"
-    model_save_dir=log_dir
-    
-    model=model.to(device)
-    
-    train_single(model, train_loader, val_loader, loss_fn, optim, epochs,
-         device,log_path,model_save_dir)
 
 def finetune_HEST_data(patches_path, adata_path, train_samples, val_samples, gene_list_path, log_dir, model, transforms, loss_fn,
                       hyperparams_dict):

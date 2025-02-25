@@ -23,6 +23,7 @@ import scanpy as sc
 import h5py
 import pickle
 import torch.nn.functional as F
+from scipy.stats import pearsonr
 
 from . import data_utils
 #import data_utils
@@ -32,6 +33,16 @@ from . import custom_losses
 def train_single(model, train_loader, val_loader, loss_fn, optim, epochs, device, log_path, save_dir):
     with open(log_path, "a") as f: # get logging ready
         f.write("Train Loss,Val Loss")
+    ''' Temp for Testing'''
+    val_loss,val_true,val_pred = eval_single(model, val_loader, loss_fn, device)
+    val_tru_arr=np.concatenate(val_true)
+    val_pred_arr=np.concatenate(val_pred)
+    corrs=[]
+    for i in range(len(torch.squeeze(y_true))):
+        corr = pearsonr(val_tru_arr[:,i],val_pred_arr[:,i])
+        corrs.append(corr.statistic)
+    corr=sum(corrs)/len(corrs)
+    '''End Temp for Testing'''
     for epoch in range(epochs):
         train_loss = 0
         for batch_idx,data in enumerate(train_loader):
@@ -50,8 +61,10 @@ def train_single(model, train_loader, val_loader, loss_fn, optim, epochs, device
         train_loss/=len(train_loader)
         val_loss,val_true,val_pred = eval_single(model, val_loader, loss_fn, device)
         
-        val_tru_arr=np.squeeze(val_true)
-        val_pred_arr=np.squeeze(val_pred)
+        #val_tru_arr=np.squeeze(val_true)
+        #val_pred_arr=np.squeeze(val_pred)
+        val_tru_arr=np.concatenate(val_true)
+        val_pred_arr=np.concatenate(val_pred)
         corrs=[]
         for i in range(len(torch.squeeze(y_true))):
             corr = pearsonr(val_tru_arr[:,i],val_pred_arr[:,i])
@@ -85,7 +98,7 @@ def train_student_teacher(teacher_model, student_model, train_loader, val_loader
             
         train_loss/=len(train_loader)
         #val_loss, val_corr = eval(teacher_model, student_model, val_loader, loss_fn, device)
-        val_loss = eval(teacher_model, student_model, val_loader, loss_fn, device)
+        val_loss = eval_student_teacher(teacher_model, student_model, val_loader, loss_fn, device)
         
         with open(log_path, "a") as f:
             #f.write(f"{train_loss},{val_loss},{val_corr}\n")
@@ -128,9 +141,9 @@ def eval_single(model, val_loader, loss_fn, device):
             imgs = imgs.to(device)
             y_true = y_true.to(device)
             preds=model(imgs)
-            loss=loss_fn(y_true,y_true)
+            loss=loss_fn(preds,y_true)
             val_loss+=loss.item()
-            all_true.append(exp_true.detach().cpu().numpy())
+            all_true.append(y_true.detach().cpu().numpy())
             all_pred.append(preds.detach().cpu().numpy())
     val_loss/=len(val_loader)
     model.train()

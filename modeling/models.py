@@ -82,6 +82,21 @@ class Virchow2Extended(nn.Module):
         # Pass through the linear layer
         out = self.fc(embedding)  # size: 1 x output_dim
         return out
+class Virchow2Emb(nn.Module):
+    def __init__(self, base_model, output_dim):
+        super().__init__()
+        self.base_model = base_model  # Pretrained Virchow2 model
+        self.fc = nn.Linear(2560, output_dim)  # Map embedding to output_dim
+
+    def forward(self, image):
+        output = self.base_model(image)  # size: 1 x 261 x 1280
+
+        class_token = output[:, 0]    # size: 1 x 1280
+        patch_tokens = output[:, 5:]  # size: 1 x 256 x 1280
+
+        # Compute final embedding
+        embedding = torch.cat([class_token, patch_tokens.mean(1)], dim=-1)  # size: 1 x 2560
+        return embedding
         
 def load_model_and_transform_VIRCHOW2(huggingface_key, num_classes):
     '''
@@ -96,9 +111,49 @@ def load_model_and_transform_VIRCHOW2(huggingface_key, num_classes):
     from timm.layers import SwiGLUPacked
     login(huggingface_key)
     base_model = timm.create_model("hf-hub:paige-ai/Virchow2", pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
-    model=Virchow2Extended(base_model=base_model,output_dim=num_classes)
+    if num_classes!=0:
+        model=Virchow2Extended(base_model=base_model,output_dim=num_classes)
+    else:
+        model=Virchow2Emb(base_model=base_model)
     virchow_transforms = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
     
     return model, virchow_transforms
+
+
+class WSIMILClassifier(nn.Module):
+    def __init__(self, encoder_model, feature_dim, n_classes):
+        """
+        Simple WSI MIL classification model.
+
+        Args:
+            encoder_model (nn.Module): Patch encoder model (e.g., ResNet, ViT).
+            feature_dim: size of embedding from encoder model, ex: 2048
+            output_size (int): Number of output classes.
+        """
+        super(WSIMILClassifier, self).__init__()
+        self.encoder = encoder_model  # Patch encoder
+
+        # Fully connected layer for bag-level classification
+        self.fc = nn.Linear(feature_dim, n_classes)
+
+    def forward(self, x):
+        """
+        Forward pass.
+
+        Args:
+            x (torch.Tensor): Input patches of shape (N, 3, 224, 224), representing one WSI.
+
+        Returns:
+            torch.Tensor: Softmax probabilities of shape (1, output_size).
+        """
+        # Encode each patch
+        patch_features = self.encoder(x)  # Shape: (N, feature_dim)
+        # Mean pooling across all patches (bag-level embedding)
+        bag_embedding = patch_features.mean(dim=0, keepdim=True)  # Shape: (1, feature_dim)
+
+        # Classification layer
+        logits = self.fc(bag_embedding)  # Shape: (1, output_size)
+        probs = F.softmax(logits, dim=-1)  # Apply softmax for class probabilities
+        return probs  # Output shape: (1, output_size)
 
     

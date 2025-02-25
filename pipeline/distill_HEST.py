@@ -45,7 +45,7 @@ from sklearn.model_selection import train_test_split
 
 from ..utils import data_utils
 from ..modeling import models
-from ..utils import train
+from ..utils import train_HEST
 from .utils import custom_losses
 
 # Model loading function mapping
@@ -57,7 +57,7 @@ MODEL_LOADERS = {
 
 # Dataset fine-tuning function mapping
 DATASET_FUNCTIONS = {
-    "HEST": train.distill_HEST_data,
+    "HEST": train_HEST.distill_HEST_data,
     # Future dataset functions can be added here
 }
 

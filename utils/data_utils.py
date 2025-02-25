@@ -85,3 +85,48 @@ class STPatchDatasetHEST(Dataset):
         #    exp = torch.nn.functional.pad(exp, (0, 100 - exp.shape[0]), mode='constant', value=0)
         #    print('!!!PADDED!!!',idx,exp)
         return patch_trans,exp
+
+class WSIClassDataset(Dataset):
+    '''
+    Dataset class to load WSI "bags" and corresponding slide-level labels, from arbitrary dataset. Needs to include a dir where there is one npy per WSI, with the npy being shaped (N, X, X, 3), N=number of patches in the image, X being the shape of a single patch.
+    
+    patches_path (ex: "wsi_dataset/patches/"): path to directory with WSI patches saved in .npy files. Nothing else should be in the directory. The name of each file should be ID.npy, where ID is a unique identifier for that sample. 
+    metadata_path (ex: "wsi_dataset/metadata.txt"): path to txt/CSV file. Must include one column called "sample_id" and another called "class" where "sample_id" is the identifier for each WSI, and "class" is an integer value (0-C, where C=total # of classes) to be used as the image-level label.
+    samples (ex: ["NCBI516", "NCBI512"...]): list with specific sample IDs to include, such as if only including training samples in this dataset.
+    transforms: torchvision transform composition for images 
+    
+    Example usage: 
+    patches_path='wsi_dataset/patches/'
+    metadata_path='wsi_dataset/metadata.txt'
+    train_items,val_items=train_test_split(samples,test_size=0.3, random_state=42)
+    transforms = transforms.Compose(
+    [
+        transforms.Resize(224),
+        #transforms.ToTensor(),
+        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),])
+    train_dset=WSIClassDataset(patches_path, metadata_path, train_items, transform)
+    
+    '''
+    def __init__(self, patches_path, metadata_path, samples, transforms):
+        super().__init__()
+        self.patches_path = patches_path 
+        self.metadata_path = metadata_path
+        self.metadata=pd.read_csv(metadata_path)
+        self.samples = samples # list of samples, ex; ['TCGA-DS-31423','TCGA-RF-32321']
+        self.num_classes=max(self.metadata["class"])
+        self.sample_ids=self.metadata["sample_id"]
+        self.transforms=transforms
+    def __len__(self):#total # of patches
+        return len(self.samples)
+    def __getitem__(self, idx):
+        sample=self.samples[idx]
+        patches=np.load(self.patches_path+sample+".npy")
+        patches=patches/255
+        patches=torch.from_numpy(patches).permute(2, 0, 1).to(torch.float32)
+        if self.transforms:
+            patch_trans=self.transforms(patch)
+        else: 
+            patch_trans=patch
+        label = int(self.metadata[self.metadata["sample_id"]==sample]["class"].values[0])
+        label_onehot = F.one_hot(label, num_classes=self.num_classes).float()
+        return patch_trans,label_onehot

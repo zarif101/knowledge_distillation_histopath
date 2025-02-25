@@ -39,7 +39,7 @@ python -m pipeline.finetune_HEST --model_name UNI2 --dataset_name HEST \
     --loss_fn mse --hf_path package/hf_secret_key.txt
 ```
 
-### ** Fine-tuning a Foundation Model on WSI Classification
+### **Fine-tuning a Foundation Model on WSI Classification
 ```bash
 python -m pipeline.finetune_WSICLASS --model_name UNI2 --dataset_name WSICLASS \
     --patches_path wsidataset/patches_path/ --metadata_path wsidataset/metadata.csv \
@@ -48,7 +48,7 @@ python -m pipeline.finetune_WSICLASS --model_name UNI2 --dataset_name WSICLASS \
     --hf_path package/hf_secret_key.txt
 ```
 
-### ** Distilling a Fine-tuned FM for HEST ST Prediction
+### **Distilling a Fine-tuned FM for HEST ST Prediction
 ```bash
 python -m pipeline.distill_HEST --teacher_path UNI2.h5 --dataset_name HEST \
     --patches_path hest_data/patches/ --adata_path hest_data/st/ \
@@ -56,7 +56,7 @@ python -m pipeline.distill_HEST --teacher_path UNI2.h5 --dataset_name HEST \
     --learning_rate 0.0001 --batch_size 16 --epochs 100 --loss_fn ce \
     --hf_path package/hf_secret_key.txt
 ```
-### ** Distilling a Fine-tuned FM for WSI Classification
+### **Distilling a Fine-tuned FM for WSI Classification
 ```bash
 python -m pipeline.distill_WSICLASS --teacher_path UNI2.h5 --dataset_name WSICLASS \
     --patches_path wsidataset/patches_path/ --metadata_path wsidataset/metadata.csv \

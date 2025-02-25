@@ -38,7 +38,7 @@ def train_single(model, train_loader, val_loader, loss_fn, optim, epochs, device
     val_tru_arr=np.concatenate(val_true)
     val_pred_arr=np.concatenate(val_pred)
     corrs=[]
-    for i in range(len(torch.squeeze(y_true))):
+    for i in range(len(100)):
         corr = pearsonr(val_tru_arr[:,i],val_pred_arr[:,i])
         corrs.append(corr.statistic)
     corr=sum(corrs)/len(corrs)

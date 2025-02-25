@@ -61,6 +61,7 @@ DATASET_FUNCTIONS = {
 
 LOSS_FUNCTIONS = {
     "mse": torch.nn.MSELoss,
+    "ce":torch.nn.CrossEntropyLoss,
     # Future loss functions
 }
 

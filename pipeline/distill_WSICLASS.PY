@@ -34,6 +34,7 @@ DATASET_FUNCTIONS = {
 # Loss function mapping
 LOSS_FUNCTIONS = {
     "mse": torch.nn.MSELoss,
+    "ce":torch.nn.CrossEntropyLoss
     # Add more loss functions here if needed
 }
 

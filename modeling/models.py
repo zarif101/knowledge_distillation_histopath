@@ -63,6 +63,40 @@ def load_model_and_transform_UNI2(huggingface_key, num_classes):
 def load_tiny_vit_5m_224(pretrained=False,num_classes=100):
     return tiny_vit_5m_224(pretrained=pretrained,num_classes=num_classes)
 
+def load_tiny_vit_11m_224(pretrained=False,num_classes=100):
+    return tiny_vit_11m_224(pretrained=pretrained,num_classes=num_classes)
+
+def load_tiny_vit_5m_224_getfeatures(pretrained=False, num_classes=100, feat_dim=None):
+    model = tiny_vit_5m_224(pretrained=pretrained, num_classes=num_classes, embed_dims=[64, 128, 160, feat_dim],num_heads=[2, 4, 5, 12])
+    '''
+    # Get original feature size dynamically
+    sample_input = torch.randn(1, 3, 224, 224)  # Dummy input
+    with torch.no_grad():
+        orig_feats = model.forward_features(sample_input)
+        orig_feat_dim = orig_feats.shape[-1]
+    # Add an FC layer to transform to feat_dim if specified
+    if feat_dim and orig_feat_dim != feat_dim:
+        model.feat_transform = nn.Linear(orig_feat_dim, feat_dim)
+        final_feat_dim = feat_dim
+    else:
+        final_feat_dim = orig_feat_dim
+    # Replace the final classifier with one that takes the adjusted feature dim
+    model.head = nn.Linear(final_feat_dim, num_classes)
+    def forward(x):
+        feats = model.forward_features(x)  # Extract features
+        if feat_dim and hasattr(model, "feat_transform"):  # Apply transformation if needed
+            feats = model.feat_transform(feats)
+        feats = model.norm_head(feats)  # Normalize
+        pred = model.head(feats)  # Classification output
+        return feats, pred
+    model.forward = forward  # Override forward method
+    '''
+    return model
+
+def load_tiny_vit_11m_224_getfeatures(pretrained=False, num_classes=100, feat_dim=None):
+    model = tiny_vit_11m_224(pretrained=pretrained, num_classes=num_classes, embed_dims=[64, 128, 256, feat_dim],num_heads=[2, 4, 8, 16])
+    return model
+
 # By default, cannot "add in" an output layer with defined size to the end of Virchow2, using the HF import. Thus, adding one in ourselves, trainable layer.
 class Virchow2Extended(nn.Module):
     def __init__(self, base_model, output_dim):

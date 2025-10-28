@@ -67,7 +67,7 @@ LOSS_FUNCTIONS = {
 
 
 def finetune(model_name, dataset_name, patches_path, metadata_path, num_classes, log_dir, num_classes, batch_size, learning_rate, epochs, loss_fn,
-            hf_path):
+            hf_path, train_layers):
     """Fine-tune a selected model on a selected dataset."""
     
     if model_name not in MODEL_LOADERS:
@@ -88,6 +88,11 @@ def finetune(model_name, dataset_name, patches_path, metadata_path, num_classes,
     last_layer = list(encoder_model.children())[-1]  # Access last layer
     feature_dim = last_layer.out_features if hasattr(last_layer, 'out_features') else None
     model = models.WSIMILClassifier(encoder_model, feature_dim, num_classes)
+    if train_layers.strip() == "final":
+        for param in encoder_model.parameters():
+            param.requires_grad = False
+        for param in encoder_model.head.parameters():
+            param.requires_grad = True
 
     # List and split dataset
     files = [q for q in os.listdir(patches_path) if 'ZEN' not in q]
@@ -119,7 +124,8 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate for training.")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs.")
     parser.add_argument("--loss_fn", type=str, default="mse", help="Loss function to use", choices=LOSS_FUNCTIONS.keys())
-    parser.add_argument("--hf_path", type=str, help="Path to HF secret key (needed if using an HF model like UNI2)")
+    parser.add_argument("--hf_path", type=str, help="Path to HF secret key (needed if using an HF model like UNI2)"),
+    parser.add_argument("--train_layers", type=str, help="Which layers to train when finetuning - either all or final")
 
     args = parser.parse_args()
 
@@ -135,4 +141,5 @@ if __name__ == "__main__":
         epochs=args.epochs,
         loss_fn=args.loss_fn,
         hf_path=args.hf_path
+        train_layers=args.train_layers
     )

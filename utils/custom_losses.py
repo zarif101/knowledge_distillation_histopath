@@ -48,3 +48,40 @@ def distillation_loss(
     # Combine the losses
     loss = soft_target_loss_weight * soft_targets_loss + label_loss_weight * label_loss
     return loss
+
+
+def distillation_loss_features(
+    student_feats: torch.Tensor,
+    student_preds: torch.Tensor,
+    teacher_feats: torch.Tensor,
+    true_labels: torch.Tensor,
+    T: float = 1.0,
+    soft_target_loss_weight: float = 0.5,
+    label_loss_weight: float = 0.5,
+) -> torch.Tensor:
+    """
+    Computes a knowledge distillation loss for regression using MSE. Compares student feats and teacher feats, then student pred and true.
+    Parameters:
+    - student_preds (torch.Tensor): Predictions from the student model.
+    - teacher_preds (torch.Tensor): Predictions from the teacher model.
+    - true_labels (torch.Tensor): Ground truth labels.
+    - T (float): Temperature parameter for softening the teacher predictions.
+    - soft_target_loss_weight (float): Weight for the distillation (soft target) loss.
+    - label_loss_weight (float): Weight for the true label loss.
+
+    Returns:
+    - torch.Tensor: Combined knowledge distillation loss.
+    """
+    # Apply temperature scaling to teacher and student predictions
+    teacher_soft = teacher_feats / T
+    student_soft = student_feats / T
+
+    # Calculate the distillation loss (soft target loss) using MSE
+    soft_targets_loss = F.mse_loss(student_soft, teacher_soft) * (T ** 2)
+
+    # Calculate the true label loss using MSE
+    label_loss = F.mse_loss(student_preds, true_labels)
+
+    # Combine the losses
+    loss = soft_target_loss_weight * soft_targets_loss + label_loss_weight * label_loss
+    return loss

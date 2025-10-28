@@ -22,6 +22,7 @@ python distill.py --teacher_path UNI2 \
 
 import sys
 import os
+#os.environ["CUDA_VISIBLE_DEVICES"] = "0" # Use only GPUs 0 and 1
 
 import argparse
 import os
@@ -46,12 +47,13 @@ from sklearn.model_selection import train_test_split
 from ..utils import data_utils
 from ..modeling import models
 from ..utils import train_HEST
-from .utils import custom_losses
+from ..utils import custom_losses
 
 # Model loading function mapping
 MODEL_LOADERS = {
     "UNI2": models.load_model_and_transform_UNI2,
-    "TINYVIT":models.load_tiny_vit_5m_224
+    "TINYVIT":models.load_tiny_vit_5m_224,
+    "TINYVIT11M":models.load_tiny_vit_11m_224
     # Future models can be added here
 }
 
@@ -63,12 +65,13 @@ DATASET_FUNCTIONS = {
 
 LOSS_FUNCTIONS = {
     "mse": torch.nn.MSELoss,
+    'distill_feature':custom_losses.distillation_loss_features
     # Future loss functions
 }
 
 
 def distill(teacher_path, teacher_model, student_model, dataset_name, patches_path, adata_path, gene_list_path, log_dir, num_classes, batch_size, learning_rate, epochs, loss_fn,
-            hf_path):
+            hf_path, distill_level, checkpoint_path, remove_id):
     """Fine-tune a selected model on a selected dataset."""
     
     if student_model not in MODEL_LOADERS:
@@ -80,27 +83,46 @@ def distill(teacher_path, teacher_model, student_model, dataset_name, patches_pa
         raise ValueError(f"Dataset '{dataset_name}' is not recognized. Available datasets: {list(DATASET_FUNCTIONS.keys())}")
 
     loss_fn = LOSS_FUNCTIONS[loss_fn]
-    loss_fn = loss_fn()
+    #loss_fn = loss_fn()
+    loss_fn=loss_fn
 
     with open(hf_path, "r") as file:
         hf_key = file.readline().strip()
-
+    if distill_level == "output":
     # Load teacher model model
-    teacher_loader = MODEL_LOADERS[model_name]
-    teacher_model_temp, transforms = model_loader(hf_key, num_classes)
-    teacher_model=torch.load(teacher_path)
-    teacher_model.eval()
-    del teacher_model_temp
-
-    # Load student model
-    student_model_loader = MODEL_LOADERS[model_name]
-    student_model = student_model_loader(num_classes)
-
+        teacher_loader = MODEL_LOADERS[teacher_model]
+        teacher_model_temp, transforms = teacher_loader(hf_key, num_classes)
+        teacher_model=torch.load(teacher_path)
+        teacher_model.eval()
+        del teacher_model_temp
+    
+        # Load student model
+        student_model_loader = MODEL_LOADERS[student_model]
+        student_model = student_model_loader(num_classes=num_classes)
+    elif distill_level == "feature":
+        teacher_loader = MODEL_LOADERS[teacher_model]
+        teacher_model_temp, transforms = teacher_loader(hf_key, num_classes=0)#just get outputs as feats
+        if teacher_path=="NONE":
+            teacher_model=teacher_model_temp
+        else:
+            teacher_model=torch.load(teacher_path)
+        teacher_model.eval()
+        #need to get student model to output feats, pred
+        #for now, hardcoding student model and teacher model
+        student_model=models.load_tiny_vit_5m_224_getfeatures(num_classes=num_classes,feat_dim=1536)
+    if checkpoint_path:
+        student_model=torch.load(checkpoint_path)
     # List and split dataset
-    files = [q for q in os.listdir(patches_path) if 'ZEN' not in q]
+    #files = [q for q in os.listdir(patches_path) if 'ZEN' not in q]
+    #files = [q for q in os.listdir(adata_path) if 'ENS' in sc.read_h5ad(os.path.join(adata_path,q)).var_names[0]]
+    files = [q for q in os.listdir(patches_path)]
+    if remove_id:
+        files = [f for f in files if remove_id not in f]
     samples = [item.split('.')[0] for item in files]
     train_items, val_items = train_test_split(samples, test_size=0.3, random_state=42)
-
+    #TESTING WITH ONE SAMPLE
+    #train_items=train_items[:1]
+    #val_items=val_items[:1]
     # Hyperparameters
     hyperparams_dict = {
         "batch_size": batch_size,
@@ -109,7 +131,11 @@ def distill(teacher_path, teacher_model, student_model, dataset_name, patches_pa
     }
 
     # Select dataset-specific training function
-    dataset_function = DATASET_FUNCTIONS[dataset_name]
+    #hardcoding for feats for now
+    if distill_level == "feature":
+        dataset_function=train_HEST.distill_HEST_data_featurelevel
+    else:
+        dataset_function = DATASET_FUNCTIONS[dataset_name]
     dataset_function(
         patches_path, adata_path, train_items, val_items, gene_list_path, log_dir, teacher_model, student_model, transforms, loss_fn, hyperparams_dict
     )
@@ -117,7 +143,7 @@ def distill(teacher_path, teacher_model, student_model, dataset_name, patches_pa
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Distill a teacher model into a student model, for a specific dataset/task.")
     
-    parser.add_argument("--teacher_path", type=str, required=True, choices=MODEL_LOADERS.keys(), help="Path to teacher model (full model saved)")
+    parser.add_argument("--teacher_path", type=str, required=True, help="Path to teacher model (full model saved). write NONE if want to use default pretrained")
     parser.add_argument("--teacher_model", type=str, required=True, choices=MODEL_LOADERS.keys(), help="Name of teacher model (used to get transforms)")
     parser.add_argument("--student_model", type=str, required=True, choices=MODEL_LOADERS.keys(), help="Name of student model")
     parser.add_argument("--dataset_name", type=str, required=True, choices=DATASET_FUNCTIONS.keys(), help="Dataset to fine-tune on.")
@@ -130,14 +156,17 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate for training.")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs.")
     parser.add_argument("--loss_fn", type=str, default="mse", help="Loss function to use", choices=LOSS_FUNCTIONS.keys())
-    parser.add_argument("--hf_path", type=str, help="Math to HF secret key (needed if using an HF model like UNI2)")
+    parser.add_argument("--hf_path", type=str, help="Path to HF secret key (needed if using an HF model like UNI2)")
+    parser.add_argument("--distill_level", type=str, default="output",help="Which level to distill at, either feature or output")
+    parser.add_argument("--checkpoint_path", type=str, default=None,help="Path to student model checkpoint to load from"),
+    parser.add_argument("--remove_id", type=str, help="Sample ID to remove for any reason", default=None)
 
     args = parser.parse_args()
 
-    finetune(
+    distill(
         teacher_path=args.teacher_path,
         teacher_model=args.teacher_model,
-        student_model=args.student_model
+        student_model=args.student_model,
         dataset_name=args.dataset_name,
         patches_path=args.patches_path,
         adata_path=args.adata_path,
@@ -148,5 +177,8 @@ if __name__ == "__main__":
         learning_rate=args.learning_rate,
         epochs=args.epochs,
         loss_fn=args.loss_fn,
-        hf_path=args.hf_path
+        hf_path=args.hf_path,
+        distill_level=args.distill_level,
+        checkpoint_path=args.checkpoint_path,
+        remove_id=args.remove_id
     )

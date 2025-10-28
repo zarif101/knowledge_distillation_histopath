@@ -21,6 +21,7 @@ python finetune.py --model_name UNI2 \
 
 import sys
 import os
+#os.environ["CUDA_VISIBLE_DEVICES"] = "0" # Use only GPUs 0 and 1
 
 import argparse
 import os
@@ -50,7 +51,8 @@ from ..utils import custom_losses
 # Model loading function mapping
 MODEL_LOADERS = {
     "UNI2": models.load_model_and_transform_UNI2,
-    "VIRCHOW2": models.load_model_and_transform_VIRCHOW2
+    "VIRCHOW2": models.load_model_and_transform_VIRCHOW2,
+    "TINYVIT":models.load_tiny_vit_5m_224
     # Future models can be added here
 }
 
@@ -67,7 +69,7 @@ LOSS_FUNCTIONS = {
 
 
 def finetune(model_name, dataset_name, patches_path, adata_path, gene_list_path, log_dir, num_classes, batch_size, learning_rate, epochs, loss_fn,
-            hf_path):
+            hf_path, train_layers, checkpoint, remove_id):
     """Fine-tune a selected model on a selected dataset."""
     
     if model_name not in MODEL_LOADERS:
@@ -84,10 +86,26 @@ def finetune(model_name, dataset_name, patches_path, adata_path, gene_list_path,
 
     # Load selected model
     model_loader = MODEL_LOADERS[model_name]
-    model, transforms = model_loader(hf_key, num_classes)
-
+    if "TINY" in model_name:
+        __, transforms = MODEL_LOADERS['UNI2'](hf_key, num_classes)
+        model = model_loader(num_classes=num_classes)
+    else:
+        model, transforms = model_loader(hf_key, num_classes)
+    if checkpoint:
+        model=torch.load(checkpoint)
+    #Train only final layer, freeze rest
+    if train_layers.strip() == "final":
+        for param in model.parameters():
+            param.requires_grad = False
+        for param in model.head.parameters():
+            param.requires_grad = True
+        
     # List and split dataset
-    files = [q for q in os.listdir(patches_path) if 'ZEN' not in q]
+    #files = [q for q in os.listdir(patches_path) if 'ZEN' not in q]
+    #files = [q for q in os.listdir(adata_path) if 'ENS' in sc.read_h5ad(os.path.join(adata_path,q)).var_names[0]]
+    files=[q for q in os.listdir(patches_path)]
+    if remove_id:
+        files = [f for f in files if remove_id not in f]
     samples = [item.split('.')[0] for item in files]
     train_items, val_items = train_test_split(samples, test_size=0.3, random_state=42)
 
@@ -119,7 +137,10 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=0.0001, help="Learning rate for training.")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs.")
     parser.add_argument("--loss_fn", type=str, default="mse", help="Loss function to use", choices=LOSS_FUNCTIONS.keys())
-    parser.add_argument("--hf_path", type=str, help="Math to HF secret key (needed if using an HF model like UNI2)")
+    parser.add_argument("--hf_path", type=str, help="Math to HF secret key (needed if using an HF model like UNI2)"),
+    parser.add_argument("--train_layers", type=str, help="Which layers to train when finetuning - either all or final")
+    parser.add_argument("--checkpoint", type=str, help="Path to checkpointed model to start training from", default=None)
+    parser.add_argument("--remove_id", type=str, help="Sample ID to remove for any reason", default=None)
 
     args = parser.parse_args()
 
@@ -135,5 +156,8 @@ if __name__ == "__main__":
         learning_rate=args.learning_rate,
         epochs=args.epochs,
         loss_fn=args.loss_fn,
-        hf_path=args.hf_path
+        hf_path=args.hf_path,
+        train_layers=args.train_layers,
+        checkpoint=args.checkpoint,
+        remove_id=args.remove_id
     )

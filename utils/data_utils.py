@@ -19,12 +19,28 @@ import scanpy as sc
 import h5py
 import pickle
 import torch.nn.functional as F
-
+'''
 def read_h5_patches(path):
     with h5py.File(path, 'r') as h5f:
         img = h5f['img'][:]  # Read the dataset into a NumPy array
         barcode=h5f['barcode'][:]
     return img
+'''
+def read_h5_patches(path):
+    with h5py.File(path, 'r') as h5f:
+        img = h5f['img'][:]  # Read the dataset into a NumPy array
+        barcode=h5f['barcode'][:]
+    return img,barcode
+
+def align_st_patches(patches, adata):
+    images,barcodes=patches
+    l = [str(item) for item in adata.obs_names]
+    barcodes=np.squeeze(barcodes)
+    barcodes=[byte_data.decode("utf-8") for byte_data in barcodes]
+    mask = np.array([bc in barcodes for bc in l])
+    adata_filtered = adata[mask].copy()
+    res_barcodes = [str(item) for item in adata_filtered.obs_names]
+    return images,adata_filtered
     
 class STPatchDatasetHEST(Dataset):
     '''
@@ -62,9 +78,13 @@ class STPatchDatasetHEST(Dataset):
             patches=read_h5_patches(patch_path)
             
             adata=sc.read_h5ad(self.adata_path+item+'.h5ad')
+            patches,adata = align_st_patches(patches, adata)
+            if patches.shape[0]!=adata.shape[0]:
+                raise ValueError("Adata and patches size mismatch")
             adata.var_names = adata.var_names.str.upper()
             sc.pp.normalize_total(adata)
             sc.pp.log1p(adata)
+            #sc.pp.scale(adata)
             adata = adata[:, adata.var_names.isin(self.gene_list)]
             exp=adata.X.toarray()
             self.all_items+=[(patches[i],exp[i]) for i in range(len(patches))]#sample, index
@@ -84,7 +104,9 @@ class STPatchDatasetHEST(Dataset):
         #if exp.shape[0] < 100: #for some reason happened during training
         #    exp = torch.nn.functional.pad(exp, (0, 100 - exp.shape[0]), mode='constant', value=0)
         #    print('!!!PADDED!!!',idx,exp)
-        return patch_trans,exp
+        patch_trans = patch_trans.to(torch.float32)
+       
+        return patch_trans,torch.from_numpy(exp).to(torch.float32)
 
 class WSIClassDataset(Dataset):
     '''

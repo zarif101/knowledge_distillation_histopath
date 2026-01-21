@@ -355,45 +355,177 @@ Splits are automatically saved to `output_dir/` for reproducibility.
 
 ## Examples
 
-### Compare Gene Selection Strategies
+### Example 1: Quick Run with Benchmarks
+
+The easiest way to get started - just specify a benchmark:
 
 ```bash
+# Train TinyViT on lung data with highly variable genes
+python -m pipeline.finetune --benchmark lung_hvg_100 --output_dir ./results/lung_hvg
+
+# Train with distillation from UNI2
+python -m pipeline.distill --benchmark breast_svg_50 --teacher uni2 --output_dir ./results/breast_distill
+```
+
+### Example 2: Compare Gene Selection Strategies
+
+```bash
+# Compare all three strategies on the same tissue
 for strategy in random hvg svg; do
     python -m pipeline.finetune \
-        --patches_path /data/patches/ \
-        --adata_path /data/st/ \
+        --patches_path /data/hest_lung/patches/ \
+        --adata_path /data/hest_lung/st/ \
         --filter_strategy $strategy \
         --n_genes 100 \
-        --output_dir ./results/${strategy}
+        --output_dir ./results/lung_${strategy}
+done
+
+# Evaluate all three
+for strategy in random hvg svg; do
+    python -m pipeline.evaluate \
+        --model_path ./results/lung_${strategy}/model_epoch99 \
+        --config_path ./results/lung_${strategy}/config.json \
+        --output_dir ./results/lung_${strategy}/eval
 done
 ```
 
-### Full Pipeline: Fine-tune → Distill → Evaluate
+### Example 3: Compare Models (Baseline vs Distilled)
+
+```bash
+# Train TinyViT baseline
+python -m pipeline.finetune \
+    --benchmark colon_hvg_100 \
+    --model tinyvit \
+    --output_dir ./results/tinyvit_baseline
+
+# Train TinyViT with UNI2 distillation
+python -m pipeline.distill \
+    --benchmark colon_hvg_100 \
+    --teacher uni2 --student tinyvit \
+    --output_dir ./results/tinyvit_uni_distill
+
+# Train TinyViT with Virchow2 distillation
+python -m pipeline.distill \
+    --benchmark colon_hvg_100 \
+    --teacher virchow2 --student tinyvit \
+    --output_dir ./results/tinyvit_virchow_distill
+
+# Compare results
+for model in tinyvit_baseline tinyvit_uni_distill tinyvit_virchow_distill; do
+    echo "=== $model ==="
+    cat ./results/${model}/eval/metrics.json
+done
+```
+
+### Example 4: Use Your Own Gene List
+
+```python
+# Create a custom gene list
+import pickle
+my_genes = ['TP53', 'EGFR', 'KRAS', 'BRCA1', 'MYC', ...]  # your genes
+with open('my_genes.pkl', 'wb') as f:
+    pickle.dump(my_genes, f)
+```
+
+```bash
+# Use the custom gene list
+python -m pipeline.finetune \
+    --patches_path /data/patches/ \
+    --adata_path /data/st/ \
+    --gene_list_path my_genes.pkl \
+    --output_dir ./results/custom_genes
+```
+
+### Example 5: Cross-Tissue Comparison
+
+Run the same configuration across multiple tissues:
+
+```bash
+for tissue in lung breast colon prostate; do
+    python -m pipeline.finetune \
+        --benchmark ${tissue}_hvg_100 \
+        --output_dir ./results/${tissue}_hvg_100
+    
+    python -m pipeline.evaluate \
+        --model_path ./results/${tissue}_hvg_100/model_epoch99 \
+        --config_path ./results/${tissue}_hvg_100/config.json \
+        --output_dir ./results/${tissue}_hvg_100/eval \
+        --compute_spatial
+done
+```
+
+### Example 6: Full Pipeline with SSIM Spatial Metrics
 
 ```bash
 # 1. Fine-tune foundation model
 python -m pipeline.finetune \
-    --patches_path /data/patches/ --adata_path /data/st/ \
-    --model uni2 --filter_strategy hvg --n_genes 100 \
-    --output_dir ./results/uni2
+    --patches_path /data/hest_breast/patches/ \
+    --adata_path /data/hest_breast/st/ \
+    --model uni2 \
+    --filter_strategy svg \
+    --n_genes 100 \
+    --output_dir ./results/uni2_breast
 
-# 2. Distill to lightweight model
+# 2. Distill to lightweight TinyViT
 python -m pipeline.distill \
-    --patches_path /data/patches/ --adata_path /data/st/ \
-    --teacher uni2 --student tinyvit \
-    --gene_list_path ./results/uni2/gene_list.pkl \
-    --output_dir ./results/distill
+    --patches_path /data/hest_breast/patches/ \
+    --adata_path /data/hest_breast/st/ \
+    --teacher uni2 \
+    --student tinyvit \
+    --gene_list_path ./results/uni2_breast/gene_list.pkl \
+    --output_dir ./results/distill_breast
 
-# 3. Evaluate both
+# 3. Evaluate with spatial SSIM metrics
 python -m pipeline.evaluate \
-    --model_path ./results/uni2/model_epoch99 \
-    --config_path ./results/uni2/config.json \
-    --output_dir ./results/uni2/eval --compute_spatial
+    --model_path ./results/uni2_breast/model_epoch99 \
+    --config_path ./results/uni2_breast/config.json \
+    --output_dir ./results/uni2_breast/eval \
+    --compute_spatial
 
 python -m pipeline.evaluate \
-    --model_path ./results/distill/model_epoch99 \
-    --config_path ./results/distill/config.json \
-    --output_dir ./results/distill/eval --compute_spatial
+    --model_path ./results/distill_breast/model_epoch99 \
+    --config_path ./results/distill_breast/config.json \
+    --output_dir ./results/distill_breast/eval \
+    --compute_spatial
+```
+
+### Example 7: Hyperparameter Tuning
+
+Override default hyperparameters:
+
+```bash
+# Longer training with lower learning rate
+python -m pipeline.finetune \
+    --benchmark lung_hvg_100 \
+    --epochs 200 \
+    --learning_rate 5e-5 \
+    --batch_size 64 \
+    --output_dir ./results/lung_tuned
+
+# Adjust distillation parameters
+python -m pipeline.distill \
+    --benchmark lung_hvg_100 \
+    --teacher uni2 \
+    --temperature 2.0 \
+    --alpha 0.7 \
+    --output_dir ./results/lung_distill_tuned
+```
+
+### Example 8: Reproducible Experiments with Fixed Splits
+
+```bash
+# First run - saves splits automatically
+python -m pipeline.finetune \
+    --benchmark prostate_svg_50 \
+    --seed 42 \
+    --output_dir ./results/run1
+
+# Reproduce with same splits
+python -m pipeline.finetune \
+    --benchmark prostate_svg_50 \
+    --train_split_path ./results/run1/train_split.json \
+    --val_split_path ./results/run1/val_split.json \
+    --output_dir ./results/run2
 ```
 
 ---

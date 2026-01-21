@@ -4,6 +4,32 @@ An open-source framework for **assessing the impact of target selection methods 
 
 The framework includes plug-and-play Python scripts that train and evaluate model architectures including foundation models, knowledge distillation, and lightweight models for virtual staining datasets filtered using a variety of target set selection strategies. Users can choose to assess custom existing trained models or retrain using standardized preprocessing workflows, enabling flexible usage to suit diverse model evaluations. The package supports evaluation on standardized benchmark datasets as well as additional datasets implemented by users.
 
+---
+
+## Table of Contents
+
+- [Key Features](#key-features)
+- [Benchmark Data](#benchmark-data)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [HEST Data Format](#hest-data-format)
+- [Gene Filtering Strategies](#gene-filtering-strategies)
+- [Models](#models)
+- [CLI Reference](#cli-reference)
+- [Predefined Benchmarks](#predefined-benchmarks)
+- [Output Structure](#output-structure)
+- [Evaluation Metrics](#evaluation-metrics)
+- [Custom Datasets](#custom-datasets)
+- [Train/Validation Splits](#trainvalidation-splits)
+- [Examples](#examples)
+- [Project Structure](#project-structure)
+- [Environment Setup](#environment-setup)
+- [Reproducing Paper Figures](#reproducing-paper-figures)
+- [License](#license)
+- [Citation](#citation)
+
+---
+
 ## Key Features
 
 - **Foundation Models**: UNI2, Virchow2

@@ -1,11 +1,17 @@
-# Knowledge Distillation for Histopathology
+# StainFactor
 
-A framework for training and evaluating models on spatial transcriptomics (HEST) data, with support for:
-- **Foundation models** (UNI2, Virchow2)
-- **Lightweight models** (TinyViT)
-- **Knowledge distillation** (teacher → student)
-- **Gene filtering strategies** (random, highly variable, spatially variable)
-- **Custom datasets** via adapter system
+An open-source framework for **assessing the impact of target selection methods on virtual staining model performance**.
+
+The framework includes plug-and-play Python scripts that train and evaluate model architectures including foundation models, knowledge distillation, and lightweight models for virtual staining datasets filtered using a variety of target set selection strategies. Users can choose to assess custom existing trained models or retrain using standardized preprocessing workflows, enabling flexible usage to suit diverse model evaluations. The package supports evaluation on standardized benchmark datasets as well as additional datasets implemented by users.
+
+## Key Features
+
+- **Foundation Models**: UNI2, Virchow2
+- **Lightweight Models**: TinyViT (5M params)
+- **Knowledge Distillation**: Transfer knowledge from large teachers to small students
+- **Target Selection Strategies**: Random, Highly Variable Genes (HVG), Spatially Variable Genes (SVG/Moran's I)
+- **Standardized Benchmarks**: Pre-configured experiments across multiple tissue types
+- **Custom Datasets**: Extensible adapter system for your own data formats
 
 ---
 
@@ -14,7 +20,7 @@ A framework for training and evaluating models on spatial transcriptomics (HEST)
 ```bash
 # Clone the repository
 git clone <repository_url>
-cd knowledge_distillation_histopath
+cd stainfactor
 
 # Install dependencies
 pip install torch torchvision timm scanpy h5py scikit-learn scipy pandas numpy

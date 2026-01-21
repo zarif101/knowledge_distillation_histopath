@@ -15,6 +15,17 @@ The framework includes plug-and-play Python scripts that train and evaluate mode
 
 ---
 
+## Benchmark Data
+
+The paper benchmarks use the publicly available [HEST dataset](https://huggingface.co/datasets/MahmoodLab/hest) (Jaume et al., 2024), which provides spatial transcriptomics data paired with H&E whole slide images across multiple tissue types.
+
+**Tissue types used in the paper:**
+- Lung, Breast, Colon, Prostate, Skin
+
+See `reproduce/README.md` for detailed data download instructions.
+
+---
+
 ## Installation
 
 ### Option 1: Conda (Recommended)

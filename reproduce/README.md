@@ -2,6 +2,88 @@
 
 This directory contains scripts to reproduce all results figures from the StainFactor paper.
 
+---
+
+## Data Access
+
+### Paper Benchmarks
+
+The experiments in the paper use the following tissue types from the HEST dataset:
+- **Lung**
+- **Breast** 
+- **Colon**
+- **Prostate**
+- **Skin**
+
+These benchmarks are defined in `utils/benchmarks.py` and represent the exact configurations used in the paper.
+
+### Downloading HEST Data
+
+All data is publicly available from the [HEST dataset on HuggingFace](https://huggingface.co/datasets/MahmoodLab/hest).
+
+**Step 1: Setup HuggingFace Access**
+
+```bash
+pip install huggingface-hub
+```
+
+```python
+from huggingface_hub import login
+login(token="YOUR_HUGGINGFACE_TOKEN")
+```
+
+You need to accept the HEST terms of use on the [dataset page](https://huggingface.co/datasets/MahmoodLab/hest) first.
+
+**Step 2: Download Specific Tissues**
+
+To download only the tissues used in the paper (recommended):
+
+```python
+import os
+from huggingface_hub import snapshot_download
+import pandas as pd
+
+local_dir = 'hest_data'
+repo_id = 'MahmoodLab/hest'
+
+# Load metadata to filter by organ
+meta_df = pd.read_csv("hf://datasets/MahmoodLab/hest/HEST_v1_2_1.csv")
+
+# Download lung samples
+lung_ids = meta_df[meta_df['organ'] == 'Lung']['id'].values
+lung_patterns = [f"*{id}[_.]**" for id in lung_ids]
+snapshot_download(repo_id=repo_id, allow_patterns=lung_patterns, repo_type="dataset", local_dir=local_dir)
+
+# Repeat for: Breast, Colon, Prostate, Skin
+```
+
+**Step 3: Organize Data**
+
+After downloading, organize the data so each tissue type has its own directory:
+
+```
+hest_data/
+├── hest_data_lung/
+│   ├── patches/
+│   └── st/
+├── hest_data_breast/
+│   ├── patches/
+│   └── st/
+├── hest_data_colon/
+│   ├── patches/
+│   └── st/
+├── hest_data_prostate/
+│   ├── patches/
+│   └── st/
+└── hest_data_skin/
+    ├── patches/
+    └── st/
+```
+
+For full HEST documentation and additional download options, see: https://huggingface.co/datasets/MahmoodLab/hest
+
+---
+
 ## Workflow
 
 ### Step 1: Run Experiments

@@ -25,8 +25,6 @@ The framework includes plug-and-play Python scripts that train and evaluate mode
 - [Project Structure](#project-structure)
 - [Environment Setup](#environment-setup)
 - [Reproducing Paper Figures](#reproducing-paper-figures)
-- [License](#license)
-- [Citation](#citation)
 
 ---
 
@@ -628,13 +626,3 @@ python generate_figures.py --results_dir /path/to/your/results
 ```
 
 See `reproduce/README.md` for detailed instructions, expected data formats, and customization options.
-
----
-
-## License
-
-[Add license]
-
-## Citation
-
-[Add citation]

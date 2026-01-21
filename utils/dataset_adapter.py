@@ -1,13 +1,18 @@
 """
-Dataset adapter system for extensible dataset support.
+Dataset adapter system for custom datasets.
 
-Provides a plugin architecture for users to integrate custom datasets
-without modifying core framework code.
+This module provides a plugin architecture for users to integrate their OWN datasets
+into the framework - with ANY data format they want!
+
+The built-in pipeline scripts (finetune.py, distill.py, evaluate.py) work with HEST format.
+For custom datasets, implement a DatasetAdapter and write your own training script,
+or modify the pipeline scripts to use your adapter.
+
+See examples/custom_dataset_adapter.py for a complete template.
 """
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Tuple
-from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
@@ -57,33 +62,47 @@ class DatasetAdapter(ABC):
     """
     Abstract base class for dataset adapters.
     
-    Implement this class to add support for a new dataset type.
+    Implement this class to add support for YOUR dataset with YOUR data format.
+    There are no restrictions on how your data is organized - just implement
+    the required methods to load and process your data.
+    
+    Required methods:
+        - task_type: Return 'regression' or 'classification'
+        - load_data: Load your data and return DataLoaders
+        - get_num_outputs: Return number of output features/classes
+        - get_loss_function: Return appropriate loss function
+    
+    See examples/custom_dataset_adapter.py for complete examples.
     """
     
     @property
     @abstractmethod
     def task_type(self) -> str:
-        """Return task type: 'regression' or 'classification'"""
+        """
+        Return the task type: 'regression' or 'classification'
+        
+        This determines how the model head is built and how metrics are computed.
+        """
         pass
     
     @abstractmethod
     def load_data(
         self,
-        data_path: str,
         train_samples: List[str],
         val_samples: List[str],
         transforms: Any,
         **kwargs
     ) -> Tuple[DataLoader, DataLoader]:
         """
-        Load training and validation data.
+        Load your training and validation data.
+        
+        This is where you implement YOUR data loading logic for YOUR format.
         
         Args:
-            data_path: Path to the dataset
-            train_samples: List of training sample IDs
-            val_samples: List of validation sample IDs
+            train_samples: List of training sample identifiers (can be anything)
+            val_samples: List of validation sample identifiers
             transforms: Image transforms to apply
-            **kwargs: Additional dataset-specific arguments
+            **kwargs: Any additional arguments your dataset needs
             
         Returns:
             Tuple of (train_loader, val_loader)
@@ -95,18 +114,28 @@ class DatasetAdapter(ABC):
         """
         Get number of output features/classes.
         
-        For regression: number of target features
+        For regression: number of target features (e.g., number of genes)
         For classification: number of classes
         """
         pass
     
     @abstractmethod
     def get_loss_function(self) -> torch.nn.Module:
-        """Return appropriate loss function for this dataset."""
+        """
+        Return appropriate loss function for your task.
+        
+        Common choices:
+        - Regression: torch.nn.MSELoss(), torch.nn.L1Loss()
+        - Classification: torch.nn.CrossEntropyLoss()
+        """
         pass
     
     def get_default_hyperparams(self) -> Dict[str, Any]:
-        """Return default hyperparameters for this dataset."""
+        """
+        Return default hyperparameters for your dataset.
+        
+        Override this to provide sensible defaults for your data.
+        """
         return {
             'learning_rate': 1e-4,
             'batch_size': 32,
@@ -116,12 +145,30 @@ class DatasetAdapter(ABC):
 
 
 # ============================================================================
-# Built-in Dataset Adapters
+# Built-in HEST Adapter (for reference)
 # ============================================================================
 
 @register_dataset("hest")
 class HESTAdapter(DatasetAdapter):
-    """Adapter for HEST spatial transcriptomics data."""
+    """
+    Adapter for HEST spatial transcriptomics data.
+    
+    This is the built-in adapter for HEST format. The pipeline scripts
+    (finetune.py, distill.py, evaluate.py) use this format directly.
+    
+    HEST data format:
+        patches_path/
+            SAMPLE1.h5    # H5 file with 'img' and 'barcode' arrays
+            SAMPLE2.h5
+            ...
+        adata_path/
+            SAMPLE1.h5ad  # AnnData with gene expression
+            SAMPLE2.h5ad
+            ...
+    
+    If your data is NOT in this format, create your own adapter!
+    See examples/custom_dataset_adapter.py
+    """
     
     def __init__(self):
         self._num_genes = None
@@ -132,37 +179,42 @@ class HESTAdapter(DatasetAdapter):
     
     def load_data(
         self,
-        data_path: str,
         train_samples: List[str],
         val_samples: List[str],
         transforms: Any,
+        patches_path: str = None,
+        adata_path: str = None,
         gene_list: Optional[List[str]] = None,
         batch_size: int = 32,
         num_workers: int = 4,
         **kwargs
     ) -> Tuple[DataLoader, DataLoader]:
-        """Load HEST data with gene list filtering."""
+        """Load HEST data."""
         from .data_utils import STPatchDatasetHEST
         
-        # Create datasets
+        if patches_path is None or adata_path is None:
+            raise ValueError("HEST requires patches_path and adata_path")
+        if gene_list is None:
+            raise ValueError("HEST requires gene_list")
+        
         train_dataset = STPatchDatasetHEST(
-            data_path=data_path,
-            sample_ids=train_samples,
+            patches_path=patches_path,
+            adata_path=adata_path,
+            samples=train_samples,
             gene_list=gene_list,
-            transform=transforms
+            transforms=transforms
         )
         
         val_dataset = STPatchDatasetHEST(
-            data_path=data_path,
-            sample_ids=val_samples,
+            patches_path=patches_path,
+            adata_path=adata_path,
+            samples=val_samples,
             gene_list=gene_list,
-            transform=transforms
+            transforms=transforms
         )
         
-        # Store num genes
-        self._num_genes = len(gene_list) if gene_list else train_dataset.num_genes
+        self._num_genes = len(gene_list) if isinstance(gene_list, list) else None
         
-        # Create loaders
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -198,83 +250,3 @@ class HESTAdapter(DatasetAdapter):
             'epochs': 100,
             'weight_decay': 1e-5
         }
-
-
-@register_dataset("wsiclass")
-class WSICLASSAdapter(DatasetAdapter):
-    """Adapter for WSI Classification data."""
-    
-    def __init__(self):
-        self._num_classes = None
-    
-    @property
-    def task_type(self) -> str:
-        return "classification"
-    
-    def load_data(
-        self,
-        data_path: str,
-        train_samples: List[str],
-        val_samples: List[str],
-        transforms: Any,
-        metadata_path: Optional[str] = None,
-        batch_size: int = 32,
-        num_workers: int = 4,
-        **kwargs
-    ) -> Tuple[DataLoader, DataLoader]:
-        """Load WSI classification data."""
-        from .data_utils import WSIClassificationDataset
-        
-        # Create datasets
-        train_dataset = WSIClassificationDataset(
-            patches_path=data_path,
-            metadata_path=metadata_path,
-            sample_ids=train_samples,
-            transform=transforms
-        )
-        
-        val_dataset = WSIClassificationDataset(
-            patches_path=data_path,
-            metadata_path=metadata_path,
-            sample_ids=val_samples,
-            transform=transforms
-        )
-        
-        # Store num classes
-        self._num_classes = train_dataset.num_classes
-        
-        # Create loaders
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            shuffle=True,
-            num_workers=num_workers,
-            pin_memory=True
-        )
-        
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-            pin_memory=True
-        )
-        
-        return train_loader, val_loader
-    
-    def get_num_outputs(self, **kwargs) -> int:
-        if self._num_classes is not None:
-            return self._num_classes
-        raise ValueError("Must call load_data first")
-    
-    def get_loss_function(self) -> torch.nn.Module:
-        return torch.nn.CrossEntropyLoss()
-    
-    def get_default_hyperparams(self) -> Dict[str, Any]:
-        return {
-            'learning_rate': 1e-4,
-            'batch_size': 64,
-            'epochs': 50,
-            'weight_decay': 1e-5
-        }
-

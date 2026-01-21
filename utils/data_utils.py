@@ -65,14 +65,29 @@ class STPatchDatasetHEST(Dataset):
     train_dset=PatchDataset(patches_path, adata_path, train_items, gene_list_path, transform)
     
     '''
-    def __init__(self, patches_path, adata_path, samples, gene_list_path, transforms):
+    def __init__(self, patches_path, adata_path, samples, gene_list, transforms):
+        """
+        Args:
+            patches_path: Path to directory with H5 patch files (e.g., "hest_data/patches/")
+            adata_path: Path to directory with h5ad expression files (e.g., "hest_data/st/")
+            samples: List of sample IDs to include
+            gene_list: Either a list of gene names OR a path to a pickle file containing the list
+            transforms: torchvision transforms for images
+        """
         super().__init__()
         self.patches_path = patches_path 
         self.adata_path = adata_path
         self.samples = samples # list of samples, ex; ['TCGA-DS-31423','TCGA-RF-32321']
         self.all_items=[]
         self.sample2patches={}
-        self.gene_list=pickle.load(open(gene_list_path,'rb')) 
+        
+        # Handle gene_list as either a list or a path to pickle file
+        if isinstance(gene_list, (list, tuple)):
+            self.gene_list = gene_list
+        elif isinstance(gene_list, str):
+            self.gene_list = pickle.load(open(gene_list, 'rb'))
+        else:
+            raise ValueError("gene_list must be a list of genes or path to pickle file") 
         for item in samples:
             patch_path=self.patches_path+item+'.h5'
             patches=read_h5_patches(patch_path)

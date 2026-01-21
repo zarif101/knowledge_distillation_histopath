@@ -1,13 +1,29 @@
 """
-Example: Creating a custom dataset adapter.
+Example: Creating a custom dataset adapter for YOUR data format.
 
-This template shows how to integrate your own dataset into the framework.
-Copy this file and modify it for your specific data format.
+The built-in pipeline scripts work with HEST format. But if you have your own
+dataset with a DIFFERENT format, you can use this adapter system to integrate it!
+
+YOUR DATA CAN BE IN ANY FORMAT - just implement the DatasetAdapter interface
+to load and process your data however you need.
 
 Usage:
     1. Copy this file to your project
-    2. Modify CustomAdapter class for your data
-    3. Import and register before running pipeline scripts
+    2. Modify the adapter class for YOUR specific data format
+    3. Import your adapter before running training
+    4. Use the adapter in your training script
+
+Example workflow:
+    # In your training script:
+    from my_adapter import MyCustomAdapter
+    
+    adapter = MyCustomAdapter()
+    train_loader, val_loader = adapter.load_data(
+        train_samples=["sample1", "sample2"],
+        val_samples=["sample3"],
+        transforms=my_transforms,
+        data_path="/path/to/my/data"  # YOUR paths
+    )
 """
 
 import torch
@@ -23,7 +39,7 @@ from utils.dataset_adapter import DatasetAdapter, register_dataset
 
 
 # =============================================================================
-# Example 1: Custom Regression Dataset Adapter
+# Example 1: Custom Regression Dataset (e.g., predicting continuous values)
 # =============================================================================
 
 @register_dataset("my_regression_data")
@@ -31,7 +47,9 @@ class CustomRegressionAdapter(DatasetAdapter):
     """
     Example adapter for a custom regression dataset.
     
-    Assumes data is organized as:
+    YOUR DATA FORMAT - Modify this to match how YOUR data is organized!
+    
+    This example assumes:
         data_path/
             sample1/
                 images/
@@ -40,6 +58,8 @@ class CustomRegressionAdapter(DatasetAdapter):
                 targets.csv  (columns: patch_id, target1, target2, ...)
             sample2/
                 ...
+    
+    But you can change this to ANY format you want!
     """
     
     def __init__(self):
@@ -51,17 +71,23 @@ class CustomRegressionAdapter(DatasetAdapter):
     
     def load_data(
         self,
-        data_path: str,
         train_samples: List[str],
         val_samples: List[str],
         transforms: Any,
+        data_path: str = None,  # YOUR custom argument
         batch_size: int = 32,
         num_workers: int = 4,
         **kwargs
     ) -> Tuple[DataLoader, DataLoader]:
-        """Load training and validation data."""
+        """
+        Load YOUR data in YOUR format.
         
-        # Create your custom dataset instances
+        Modify this method to load your specific data format!
+        """
+        if data_path is None:
+            raise ValueError("Must provide data_path")
+        
+        # Create YOUR custom dataset instances
         train_dataset = CustomRegressionDataset(
             data_path=data_path,
             sample_ids=train_samples,
@@ -74,10 +100,8 @@ class CustomRegressionAdapter(DatasetAdapter):
             transform=transforms
         )
         
-        # Store number of outputs
         self._num_outputs = train_dataset.num_targets
         
-        # Create data loaders
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -114,7 +138,9 @@ class CustomRegressionAdapter(DatasetAdapter):
 
 
 class CustomRegressionDataset(Dataset):
-    """Custom PyTorch Dataset for the regression task."""
+    """
+    Custom PyTorch Dataset - modify this for YOUR data format!
+    """
     
     def __init__(
         self,
@@ -126,24 +152,23 @@ class CustomRegressionDataset(Dataset):
         self.sample_ids = sample_ids
         self.transform = transform
         
-        # Load all patches and targets
+        # Load YOUR data here - modify for YOUR format!
         self.patches = []
         self.targets = []
         
         for sample_id in sample_ids:
             sample_dir = self.data_path / sample_id
             
-            # Load targets
+            # Example: Load targets from CSV
             import pandas as pd
             targets_df = pd.read_csv(sample_dir / 'targets.csv')
             
-            # Load each patch
+            # Example: Load each patch image
             images_dir = sample_dir / 'images'
             for _, row in targets_df.iterrows():
                 patch_path = images_dir / f"{row['patch_id']}.png"
                 if patch_path.exists():
                     self.patches.append(str(patch_path))
-                    # Extract target values (all columns except patch_id)
                     target_cols = [c for c in targets_df.columns if c != 'patch_id']
                     self.targets.append(row[target_cols].values.astype(float))
         
@@ -156,10 +181,8 @@ class CustomRegressionDataset(Dataset):
     def __getitem__(self, idx):
         from PIL import Image
         
-        # Load image
         img = Image.open(self.patches[idx]).convert('RGB')
         
-        # Apply transforms
         if self.transform:
             img = self.transform(img)
         
@@ -167,7 +190,7 @@ class CustomRegressionDataset(Dataset):
 
 
 # =============================================================================
-# Example 2: Custom Classification Dataset Adapter
+# Example 2: Custom Classification Dataset
 # =============================================================================
 
 @register_dataset("my_classification_data")
@@ -175,14 +198,19 @@ class CustomClassificationAdapter(DatasetAdapter):
     """
     Example adapter for a custom classification dataset.
     
-    Assumes data is organized as:
+    This example uses torchvision's ImageFolder format:
         data_path/
-            class_0/
-                image1.png
-                image2.png
-            class_1/
-                image3.png
-                image4.png
+            train/
+                class_0/
+                    image1.png
+                class_1/
+                    image2.png
+            val/
+                class_0/
+                    image3.png
+                ...
+    
+    But again, you can modify this for ANY format!
     """
     
     def __init__(self):
@@ -194,19 +222,20 @@ class CustomClassificationAdapter(DatasetAdapter):
     
     def load_data(
         self,
-        data_path: str,
-        train_samples: List[str],
+        train_samples: List[str],  # Not used in ImageFolder, but required by interface
         val_samples: List[str],
         transforms: Any,
+        data_path: str = None,
         batch_size: int = 64,
         num_workers: int = 4,
         **kwargs
     ) -> Tuple[DataLoader, DataLoader]:
-        """Load training and validation data."""
+        """Load classification data using ImageFolder format."""
         from torchvision.datasets import ImageFolder
         
-        # For ImageFolder-style datasets, train_samples and val_samples
-        # could be paths to train/val directories
+        if data_path is None:
+            raise ValueError("Must provide data_path")
+        
         train_dataset = ImageFolder(
             root=f"{data_path}/train",
             transform=transforms
@@ -252,32 +281,40 @@ class CustomClassificationAdapter(DatasetAdapter):
 
 if __name__ == "__main__":
     """
-    To use your custom adapter:
+    Example training script using a custom adapter.
     
-    1. Import this file before running the pipeline:
-        
-        import examples.custom_dataset_adapter
-        
-    2. Then run with your dataset name:
-        
-        python pipeline/finetune.py --dataset my_regression_data \\
-            --data_path /path/to/your/data \\
-            --output_dir ./results
-    
-    3. Or use programmatically:
-        
-        from utils.dataset_adapter import get_dataset_adapter
-        
-        adapter = get_dataset_adapter("my_regression_data")
-        train_loader, val_loader = adapter.load_data(
-            data_path="/path/to/data",
-            train_samples=["sample1", "sample2"],
-            val_samples=["sample3"],
-            transforms=your_transforms
-        )
+    You can write a similar script for your own data!
     """
     
-    # List all registered datasets (including custom ones)
+    print("=== Custom Dataset Adapter Example ===\n")
+    
+    # List all registered datasets
     from utils.dataset_adapter import list_available_datasets
     print("Available datasets:", list_available_datasets())
-
+    
+    print("\n--- Example Usage ---")
+    print("""
+    # 1. Import your adapter
+    from examples.custom_dataset_adapter import CustomRegressionAdapter
+    
+    # 2. Create adapter instance
+    adapter = CustomRegressionAdapter()
+    
+    # 3. Load your data (with YOUR paths and YOUR format)
+    train_loader, val_loader = adapter.load_data(
+        train_samples=["sample1", "sample2", "sample3"],
+        val_samples=["sample4"],
+        transforms=my_transforms,
+        data_path="/path/to/my/data"  # YOUR data location
+    )
+    
+    # 4. Get model configuration
+    num_outputs = adapter.get_num_outputs()
+    loss_fn = adapter.get_loss_function()
+    
+    # 5. Train your model!
+    # ... (use the loaders in your training loop)
+    """)
+    
+    print("\nThe key point: YOUR data can be in ANY format!")
+    print("Just implement the DatasetAdapter interface to load it.")

@@ -1,24 +1,11 @@
-# Virtual Staining Target Selection Framework
+# Knowledge Distillation for Histopathology
 
-An open-source framework for assessing the impact of target selection methods on virtual staining model performance. The framework includes plug-and-play Python scripts that train and evaluate model architectures including foundation models, knowledge distillation, and lightweight models for virtual staining datasets filtered using a variety of target set selection strategies.
-
-Users can choose to assess custom existing trained models or retrain using standardized preprocessing workflows, enabling flexible usage to suit diverse model evaluations. The package supports evaluation on standardized benchmark datasets as well as additional datasets implemented by users.
-
----
-
-## Table of Contents
-
-1. [Installation](#installation)
-2. [Quick Start](#quick-start)
-3. [Core Concepts](#core-concepts)
-4. [Scripts Reference](#scripts-reference)
-5. [Target Selection Strategies](#target-selection-strategies)
-6. [Standardized Benchmarks](#standardized-benchmarks)
-7. [Train/Validation Splits](#trainvalidation-splits)
-8. [Evaluation Metrics](#evaluation-metrics)
-9. [Output Structure](#output-structure)
-10. [Custom Datasets](#custom-datasets)
-11. [Examples](#examples)
+A framework for training and evaluating models on spatial transcriptomics (HEST) data, with support for:
+- **Foundation models** (UNI2, Virchow2)
+- **Lightweight models** (TinyViT)
+- **Knowledge distillation** (teacher → student)
+- **Gene filtering strategies** (random, highly variable, spatially variable)
+- **Custom datasets** via adapter system
 
 ---
 
@@ -31,8 +18,8 @@ cd knowledge_distillation_histopath
 
 # Install dependencies
 pip install torch torchvision timm scanpy h5py scikit-learn scipy pandas numpy
-pip install huggingface_hub  # Required for foundation models (UNI2, VIRCHOW2)
-pip install scikit-image     # Required for SSIM spatial metrics
+pip install huggingface_hub    # For foundation models (UNI2, Virchow2)
+pip install scikit-image       # For SSIM spatial metrics
 
 # Optional: for Moran's I spatial gene selection
 pip install squidpy
@@ -42,858 +29,344 @@ pip install squidpy
 
 ## Quick Start
 
-### 1. Fine-tune a Foundation Model
+### 1. Fine-tune a Model
 
 ```bash
 python -m pipeline.finetune \
-    --dataset HEST \
-    --model_name UNI2 \
-    --patches_path data/patches/ \
-    --adata_path data/st/ \
-    --filter_strategy highly_variable \
+    --patches_path /data/hest/patches/ \
+    --adata_path /data/hest/st/ \
+    --model tinyvit \
+    --filter_strategy hvg \
     --n_genes 100 \
-    --output_dir runs/finetune_uni2_hvg/ \
-    --batch_size 16 \
-    --learning_rate 0.0001 \
-    --epochs 50 \
-    --hf_path hf_key.txt
+    --output_dir ./results/finetune
 ```
 
-### 2. Distill into a Lightweight Model
+### 2. Knowledge Distillation
 
 ```bash
 python -m pipeline.distill \
-    --dataset HEST \
-    --teacher_model UNI2 \
-    --teacher_path runs/finetune_uni2_hvg/checkpoints/model_epoch50 \
-    --student_model TINYVIT \
-    --patches_path data/patches/ \
-    --adata_path data/st/ \
-    --filter_strategy highly_variable \
+    --patches_path /data/hest/patches/ \
+    --adata_path /data/hest/st/ \
+    --teacher uni2 \
+    --student tinyvit \
+    --filter_strategy hvg \
     --n_genes 100 \
-    --output_dir runs/distill_tinyvit/ \
-    --batch_size 16 \
-    --learning_rate 0.0001 \
-    --epochs 50 \
-    --hf_path hf_key.txt
+    --output_dir ./results/distill
 ```
 
-### 3. Evaluate a Trained Model
+### 3. Evaluate
 
 ```bash
 python -m pipeline.evaluate \
-    --dataset HEST \
-    --model_name UNI2 \
-    --model_path runs/finetune_uni2_hvg/checkpoints/model_epoch50 \
-    --patches_path data/patches/ \
-    --adata_path data/st/ \
-    --gene_list_path runs/finetune_uni2_hvg/gene_list.pkl \
-    --output_dir runs/finetune_uni2_hvg/eval/ \
-    --compute_spatial \
-    --hf_path hf_key.txt
+    --model_path ./results/finetune/model_epoch99 \
+    --patches_path /data/hest/patches/ \
+    --adata_path /data/hest/st/ \
+    --config_path ./results/finetune/config.json \
+    --output_dir ./results/eval \
+    --compute_spatial
 ```
 
 ---
 
-## Core Concepts
+## HEST Data Format
 
-### Supported Models
+The pipeline is designed for **HEST-format** spatial transcriptomics data. This format works for any tissue type (lung, breast, skin, etc.):
 
-| Model | Type | Size | Description |
-|-------|------|------|-------------|
-| `UNI2` | Foundation | ~300M params | MahmoodLab's UNI2 Vision Transformer |
-| `VIRCHOW2` | Foundation | ~300M params | Paige AI's Virchow2 model |
-| `TINYVIT` | Lightweight | 5M params | Compact model for deployment |
-| `TINYVIT11M` | Lightweight | 11M params | Larger TinyViT variant |
+```
+your_data/
+├── patches/                    # --patches_path
+│   ├── SAMPLE_001.h5          # H5 file with 'img' and 'barcode' arrays
+│   ├── SAMPLE_002.h5
+│   └── ...
+│
+└── st/                         # --adata_path
+    ├── SAMPLE_001.h5ad        # AnnData with gene expression + spatial coords
+    ├── SAMPLE_002.h5ad
+    └── ...
+```
 
-### Supported Datasets
+**H5 patch files** contain:
+- `img`: Array of patch images
+- `barcode`: Array of spot barcodes
 
-| Dataset | Task | Input | Output |
-|---------|------|-------|--------|
-| `HEST` | Virtual Staining / Gene Expression | Histopathology patches | Gene expression values |
-| `WSICLASS` | Classification | Whole slide image patches | Class labels |
-
-### Workflow Options
-
-1. **Fine-tune Only**: Train a foundation model or lightweight model directly on your task
-2. **Knowledge Distillation**: Train a lightweight student model to mimic a larger teacher model
-3. **Evaluate Only**: Assess an existing trained model on test data
+**h5ad files** are standard AnnData objects with gene expression matrices.
 
 ---
 
-## Scripts Reference
+## Gene Filtering Strategies
 
-### `pipeline.finetune`
-
-Fine-tune a model on your dataset.
-
-```bash
-python -m pipeline.finetune \
-    --dataset {HEST,WSICLASS} \
-    --model_name {UNI2,VIRCHOW2,TINYVIT,TINYVIT11M} \
-    --patches_path PATH \
-    --output_dir PATH \
-    --hf_path PATH \
-    [additional options...]
-```
-
-**Key Arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `--dataset` | Dataset type: `HEST` or `WSICLASS` |
-| `--model_name` | Model architecture to train |
-| `--patches_path` | Directory containing patch files |
-| `--output_dir` | Where to save all outputs |
-| `--hf_path` | Path to HuggingFace API key file |
-| `--filter_strategy` | Gene selection strategy (HEST only) |
-| `--n_genes` | Number of genes to select |
-| `--train_split` | Custom training samples file |
-| `--val_split` | Custom validation samples file |
-| `--train_layers` | `all` or `final` (freeze strategy) |
-| `--batch_size` | Training batch size |
-| `--learning_rate` | Learning rate |
-| `--epochs` | Number of training epochs |
-
-### `pipeline.distill`
-
-Distill a teacher model into a student model.
-
-```bash
-python -m pipeline.distill \
-    --dataset {HEST,WSICLASS} \
-    --teacher_model {UNI2,VIRCHOW2,...} \
-    --teacher_path PATH \
-    --student_model {TINYVIT,TINYVIT11M,...} \
-    --patches_path PATH \
-    --output_dir PATH \
-    --hf_path PATH \
-    [additional options...]
-```
-
-**Additional Arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `--teacher_model` | Teacher model architecture |
-| `--teacher_path` | Path to trained teacher checkpoint |
-| `--student_model` | Student model architecture |
-| `--distill_level` | `output` (match predictions) or `feature` (match representations) |
-
-### `pipeline.evaluate`
-
-Evaluate a trained model with comprehensive metrics.
-
-```bash
-python -m pipeline.evaluate \
-    --dataset {HEST,WSICLASS} \
-    --model_name {UNI2,VIRCHOW2,...} \
-    --model_path PATH \
-    --patches_path PATH \
-    --output_dir PATH \
-    --hf_path PATH \
-    [additional options...]
-```
-
-**Key Arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `--model_path` | Path to trained model checkpoint |
-| `--gene_list_path` | Gene list used for training (HEST) |
-| `--eval_split` | `test` (30% holdout) or `all` samples |
-| `--eval_split_path` | Custom evaluation samples file |
-| `--compute_spatial` | Compute SSIM spatial metrics (HEST) |
-
----
-
-## Target Selection Strategies
-
-For HEST (virtual staining) tasks, you can select which genes to predict using different strategies:
-
-### Available Strategies
+Choose which genes to predict using `--filter_strategy`:
 
 | Strategy | Flag | Description |
 |----------|------|-------------|
-| **Custom** | `--filter_strategy custom --gene_list_path genes.pkl` | Provide your own gene list |
-| **Random** | `--filter_strategy random --n_genes 100` | Randomly select N genes |
-| **Highly Variable** | `--filter_strategy highly_variable --n_genes 100` | Top N genes by variance (HVG) |
-| **Spatially Variable** | `--filter_strategy spatially_variable --n_genes 100` | Top N genes by Moran's I |
-
-### Example: Compare Different Strategies
+| **Random** | `--filter_strategy random` | Randomly select N genes |
+| **Highly Variable** | `--filter_strategy hvg` | Top N genes by variance (scanpy) |
+| **Spatially Variable** | `--filter_strategy svg` | Top N genes by Moran's I (squidpy) |
+| **Custom** | `--gene_list_path genes.pkl` | Provide your own gene list |
 
 ```bash
-# Train with highly variable genes
-python -m pipeline.finetune --dataset HEST --model_name UNI2 \
-    --filter_strategy highly_variable --n_genes 100 \
-    --output_dir runs/hvg_100/ ...
-
-# Train with spatially variable genes
-python -m pipeline.finetune --dataset HEST --model_name UNI2 \
-    --filter_strategy spatially_variable --n_genes 100 \
-    --output_dir runs/svg_100/ ...
-
-# Train with random genes
-python -m pipeline.finetune --dataset HEST --model_name UNI2 \
-    --filter_strategy random --n_genes 100 --seed 42 \
-    --output_dir runs/random_100/ ...
+# Example: Compare strategies
+python -m pipeline.finetune --filter_strategy random --n_genes 100 --output_dir ./random
+python -m pipeline.finetune --filter_strategy hvg --n_genes 100 --output_dir ./hvg
+python -m pipeline.finetune --filter_strategy svg --n_genes 100 --output_dir ./svg
 ```
 
 ---
 
-## Standardized Benchmarks
+## Models
 
-The framework includes pre-defined benchmark configurations for reproducible experiments. Benchmarks specify the dataset, gene selection strategy, hyperparameters, and recommended models.
+| Model | Type | Flag | Description |
+|-------|------|------|-------------|
+| TinyViT | Lightweight | `--model tinyvit` | 5M params, fast inference |
+| UNI2 | Foundation | `--model uni2` | MahmoodLab's foundation model |
+| Virchow2 | Foundation | `--model virchow2` | Paige AI's foundation model |
 
-### Using a Benchmark
+---
+
+## CLI Reference
+
+### `pipeline.finetune`
+
+Fine-tune a model on HEST data.
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--patches_path` | Directory with H5 patch files | Required |
+| `--adata_path` | Directory with h5ad expression files | Required |
+| `--output_dir` | Output directory | Required |
+| `--model` | Model: `tinyvit`, `uni2`, `virchow2` | `tinyvit` |
+| `--filter_strategy` | Gene selection: `random`, `hvg`, `svg` | `random` |
+| `--n_genes` | Number of genes | `100` |
+| `--gene_list_path` | Pre-computed gene list (pkl) | None |
+| `--train_split_path` | Custom train samples file | None |
+| `--val_split_path` | Custom val samples file | None |
+| `--val_ratio` | Validation ratio | `0.2` |
+| `--batch_size` | Batch size | `32` |
+| `--learning_rate` | Learning rate | `1e-4` |
+| `--epochs` | Training epochs | `100` |
+| `--seed` | Random seed | `42` |
+
+### `pipeline.distill`
+
+Knowledge distillation from teacher to student.
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--teacher` | Teacher model: `uni2`, `virchow2` | `uni2` |
+| `--student` | Student model: `tinyvit` | `tinyvit` |
+| `--distill_type` | `feature` or `logit` level | `feature` |
+| `--temperature` | Distillation temperature | `4.0` |
+| `--alpha` | Distillation loss weight | `0.5` |
+| *(plus all finetune args)* | | |
+
+### `pipeline.evaluate`
+
+Evaluate a trained model.
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--model_path` | Path to trained model | Required |
+| `--config_path` | Config from training (auto-loads paths) | None |
+| `--eval_split_path` | Custom evaluation samples | None |
+| `--use_val` | Use val split from training | False |
+| `--compute_spatial` | Compute SSIM metrics | False |
+| *(plus patches_path, adata_path, gene_list_path)* | | |
+
+---
+
+## Predefined Benchmarks
+
+Run standardized experiments with predefined configurations:
 
 ```bash
-# List all available benchmarks
+# List available benchmarks
 python -m pipeline.finetune --list_benchmarks
 
-# Run a benchmark (auto-fills dataset, paths, genes, hyperparameters)
-python -m pipeline.finetune \
-    --benchmark HEST_HVG100 \
-    --model_name UNI2 \
-    --output_dir runs/benchmark_hvg100/ \
-    --hf_path hf_key.txt
+# Run a benchmark
+python -m pipeline.finetune --benchmark hest_hvg_100 --output_dir ./results
 ```
 
-### Available Benchmarks
+**Available benchmarks:**
+- `hest_random_50`, `hest_random_100`
+- `hest_hvg_50`, `hest_hvg_100`
+- `hest_svg_50`, `hest_svg_100`
 
-| Benchmark | Dataset | Strategy | Genes | Description |
-|-----------|---------|----------|-------|-------------|
-| `HEST_HVG50` | HEST | Highly Variable | 50 | HVG baseline |
-| `HEST_HVG100` | HEST | Highly Variable | 100 | HVG standard |
-| `HEST_HVG250` | HEST | Highly Variable | 250 | HVG extended |
-| `HEST_SVG50` | HEST | Spatially Variable | 50 | Moran's I selection |
-| `HEST_SVG100` | HEST | Spatially Variable | 100 | Moran's I selection |
-| `HEST_RANDOM50` | HEST | Random | 50 | Random baseline |
-| `HEST_RANDOM100` | HEST | Random | 100 | Random baseline |
-| `HEST_LUAD_HVG100` | HEST | Highly Variable | 100 | Lung adenocarcinoma |
-| `HEST_BREAST_HVG100` | HEST | Highly Variable | 100 | Breast cancer |
-| `HEST_SKIN_HVG100` | HEST | Highly Variable | 100 | Skin tissue |
-| `WSICLASS_EXAMPLE` | WSICLASS | N/A | N/A | WSI classification |
-
-### Benchmark Configuration
-
-Each benchmark includes:
-- **Dataset**: Which dataset adapter to use
-- **Data paths**: Paths to patches, adata, metadata
-- **Gene selection**: Filter strategy and number of genes
-- **Splits**: Pre-defined or seed-based train/val/test splits
-- **Hyperparameters**: Batch size, learning rate, epochs
-- **Recommended models**: Models known to work well
-
-### Overriding Benchmark Settings
-
-You can override any benchmark setting with CLI arguments:
-
-```bash
-# Use HEST_HVG100 but with different learning rate and epochs
-python -m pipeline.finetune \
-    --benchmark HEST_HVG100 \
-    --model_name UNI2 \
-    --learning_rate 0.001 \
-    --epochs 50 \
-    --output_dir runs/custom_benchmark/ \
-    --hf_path hf_key.txt
-```
-
-### Setting Up Benchmark Paths
-
-Benchmarks have placeholder paths (`<FILL_IN>`) that need to be configured. Edit `utils/benchmarks.py` and replace the placeholders:
-
-```python
-# Before
-patches_path="<FILL_IN>/hest_data/patches/",
-adata_path="<FILL_IN>/hest_data/st/",
-
-# After
-patches_path="/data/hest/patches/",
-adata_path="/data/hest/st/",
-```
+**Setup:** Edit `utils/benchmarks.py` and fill in your data paths.
 
 ---
 
-## Train/Validation Splits
+## Output Structure
 
-### Default Behavior
+Every run produces a standardized output:
 
-By default, the framework automatically splits your data 70/30 train/validation using a random seed:
-
-```bash
-python -m pipeline.finetune ... --seed 42  # Reproducible 70/30 split
 ```
+output_dir/
+├── config.json           # Full configuration (reproducibility)
+├── train_split.json      # Training sample IDs
+├── val_split.json        # Validation sample IDs
+├── gene_list.pkl         # Selected genes
+├── log.txt               # Training log
+├── model_epoch0          # Checkpoints
+├── model_epoch1
+└── ...
 
-### Custom Splits
-
-Provide your own split files (one sample ID per line):
-
-```bash
-python -m pipeline.finetune ... \
-    --train_split splits/train_samples.txt \
-    --val_split splits/val_samples.txt
-```
-
-**Split file format:**
-```
-SAMPLE_001
-SAMPLE_002
-SAMPLE_003
-```
-
-### Auto-Saved Splits
-
-When training, splits are automatically saved to your output directory for reproducibility:
-- `output_dir/train_samples.txt`
-- `output_dir/val_samples.txt`
-
-### Evaluation Splits
-
-```bash
-# Use the default test split (30% holdout with same seed)
-python -m pipeline.evaluate ... --eval_split test --seed 42
-
-# Evaluate on all samples
-python -m pipeline.evaluate ... --eval_split all
-
-# Use custom evaluation samples
-python -m pipeline.evaluate ... --eval_split_path splits/test_samples.txt
+eval/
+├── metrics.json          # All metrics
+└── per_gene_metrics.csv  # Per-gene breakdown
 ```
 
 ---
 
 ## Evaluation Metrics
 
-### HEST (Virtual Staining) Metrics
-
 | Metric | Description |
 |--------|-------------|
-| **MSE** | Mean Squared Error between predicted and true expression |
-| **R²** | Coefficient of determination |
-| **Pearson r** | Pearson correlation coefficient (mean/median across genes) |
-| **Spearman r** | Spearman rank correlation (mean/median across genes) |
-| **SSIM** | Structural Similarity Index on spatial expression maps |
-
-**Per-gene breakdown** is provided for all metrics.
-
-### WSICLASS (Classification) Metrics
-
-| Metric | Description |
-|--------|-------------|
-| **Accuracy** | Overall classification accuracy |
-| **F1 Macro** | Macro-averaged F1 score |
-| **F1 Weighted** | Weighted F1 score |
-| **Per-class Accuracy** | Accuracy for each class |
-
-### Spatial Metrics (SSIM)
-
-SSIM measures structural similarity between spatial gene expression maps:
-
-```bash
-python -m pipeline.evaluate --dataset HEST ... --compute_spatial
-```
-
-This builds 2D spatial maps from spot coordinates and computes SSIM between true and predicted maps for each gene.
-
----
-
-## Output Structure
-
-All scripts produce a standardized output directory:
-
-```
-output_dir/
-│
-├── config.json              # Complete configuration for reproducibility
-│                            # Contains all arguments, timestamp, paths
-│
-├── train_samples.txt        # Training sample IDs (auto-saved)
-├── val_samples.txt          # Validation sample IDs (auto-saved)
-│
-├── gene_list.pkl            # Gene list used (HEST only)
-│                            # Auto-generated or copied from custom
-│
-├── checkpoints/             # Model checkpoints
-│   ├── model_epoch0
-│   ├── model_epoch1
-│   ├── ...
-│   └── model_epoch{best}
-│
-└── eval/                    # Evaluation outputs (if evaluated)
-    ├── eval_config.json     # Evaluation configuration
-    ├── metrics.json         # All metrics (overall + per-gene)
-    └── per_gene_metrics.csv # Per-gene metrics as CSV
-```
-
-### Config File Example
-
-```json
-{
-  "dataset": "HEST",
-  "model_name": "UNI2",
-  "filter_strategy": "highly_variable",
-  "n_genes": 100,
-  "batch_size": 16,
-  "learning_rate": 0.0001,
-  "epochs": 50,
-  "seed": 42,
-  "timestamp": "2026-01-21T10:30:00",
-  "output_paths": {
-    "root": "runs/experiment_1/",
-    "checkpoints": "runs/experiment_1/checkpoints/",
-    "config": "runs/experiment_1/config.json",
-    "gene_list": "runs/experiment_1/gene_list.pkl"
-  }
-}
-```
-
-### Metrics Output Example
-
-```json
-{
-  "overall": {
-    "mse": 0.0234,
-    "r2": 0.8756,
-    "mean_pearson_r": 0.7823,
-    "median_pearson_r": 0.8012,
-    "mean_spearman_r": 0.7654,
-    "median_spearman_r": 0.7891,
-    "mean_ssim": 0.6543,
-    "median_ssim": 0.6821,
-    "n_samples": 15420,
-    "n_genes": 100
-  },
-  "per_gene": [
-    {"gene": "EGFR", "mse": 0.012, "r2": 0.91, "pearson_r": 0.85, "ssim": 0.72},
-    {"gene": "TP53", "mse": 0.018, "r2": 0.87, "pearson_r": 0.81, "ssim": 0.68},
-    ...
-  ]
-}
-```
+| MSE | Mean squared error |
+| R² | Coefficient of determination |
+| Pearson | Mean Pearson correlation across genes |
+| Spearman | Mean Spearman correlation across genes |
+| SSIM | Structural similarity on spatial maps (with `--compute_spatial`) |
 
 ---
 
 ## Custom Datasets
 
-The framework uses a **Dataset Adapter** system that makes it easy to add your own datasets. You create a Python class that implements a few required methods, and the framework handles the rest.
+For data **not in HEST format**, use the adapter system:
 
-### Using a Custom Dataset
+### Step 1: Create Your Adapter
+
+See `examples/custom_dataset_adapter.py` for a complete template.
+
+```python
+from utils.dataset_adapter import DatasetAdapter, register_dataset
+
+@register_dataset("my_data")
+class MyAdapter(DatasetAdapter):
+    @property
+    def task_type(self):
+        return "regression"  # or "classification"
+    
+    def load_data(self, train_samples, val_samples, transforms, **kwargs):
+        # Load YOUR data in YOUR format
+        # Return (train_loader, val_loader)
+        ...
+    
+    def get_num_outputs(self, **kwargs):
+        return 100  # number of targets
+    
+    def get_loss_function(self):
+        return torch.nn.MSELoss()
+```
+
+### Step 2: Use Your Adapter
+
+```bash
+# Import your adapter, then run with --dataset flag
+python -m pipeline.finetune \
+    --dataset my_data \
+    --data_path /path/to/your/data \
+    --output_dir ./results
+```
+
+**Key point:** Your data can be in **ANY format**. The adapter handles all loading/processing.
+
+---
+
+## Train/Validation Splits
+
+**Default:** Random 80/20 split with seed.
+
+**Custom splits:** Provide JSON or text files with sample IDs:
 
 ```bash
 python -m pipeline.finetune \
-    --dataset MYDATASET \
-    --custom_adapter path/to/my_adapter.py \
-    --patches_path my_data/patches/ \
-    --labels_path my_data/labels.csv \
-    --output_dir runs/my_experiment/ \
-    --hf_path hf_key.txt
+    --train_split_path ./splits/train.json \
+    --val_split_path ./splits/val.json \
+    ...
 ```
 
-### Creating a Custom Adapter
-
-Create a Python file with your adapter class:
-
-```python
-# my_adapter.py
-
-from utils.dataset_adapter import DatasetAdapter, register_dataset
-from torch.utils.data import Dataset
-import torch
-import numpy as np
-import os
-
-# Step 1: Define your PyTorch Dataset
-class MyDataset(Dataset):
-    def __init__(self, patches_path, labels_path, samples, transforms=None):
-        self.patches_path = patches_path
-        self.samples = samples
-        self.transforms = transforms
-        # Load your labels here
-        
-    def __len__(self):
-        return len(self.samples)
-    
-    def __getitem__(self, idx):
-        # Load and return (image, target) pair
-        sample_id = self.samples[idx]
-        patch = np.load(f"{self.patches_path}/{sample_id}.npy")
-        patch = torch.from_numpy(patch).permute(2, 0, 1).float() / 255.0
-        if self.transforms:
-            patch = self.transforms(patch)
-        target = torch.tensor([0.5])  # Your target here
-        return patch, target
-
-# Step 2: Create the Adapter
-@register_dataset
-class MyAdapter(DatasetAdapter):
-    name = "MYDATASET"           # Used in --dataset arg
-    task_type = "regression"     # or "classification"
-    
-    def get_sample_ids(self, data_path, **kwargs):
-        """Return list of sample IDs from your data directory."""
-        files = [f for f in os.listdir(data_path) if f.endswith('.npy')]
-        return [f.replace('.npy', '') for f in files]
-    
-    def get_num_outputs(self, **kwargs):
-        """Return number of output dimensions (genes/classes)."""
-        return 1
-    
-    def create_dataset(self, samples, transforms, patches_path, labels_path=None, **kwargs):
-        """Create and return your PyTorch Dataset."""
-        return MyDataset(patches_path, labels_path, samples, transforms)
-    
-    def validate_args(self, args):
-        """Validate required arguments."""
-        if not args.labels_path:
-            raise ValueError("--labels_path is required")
-    
-    def get_required_args(self):
-        """List of required CLI argument names."""
-        return ['labels_path']
-```
-
-### Adapter Interface Reference
-
-Your adapter class must:
-
-1. **Inherit from `DatasetAdapter`**
-2. **Set class attributes:**
-   - `name`: Unique identifier (used in `--dataset` CLI arg)
-   - `task_type`: Either `"regression"` or `"classification"`
-
-3. **Implement required methods:**
-
-| Method | Description | Returns |
-|--------|-------------|---------|
-| `get_sample_ids(data_path, **kwargs)` | List all available sample IDs | `List[str]` |
-| `get_num_outputs(**kwargs)` | Number of outputs (genes/classes) | `int` |
-| `create_dataset(samples, transforms, **kwargs)` | Create PyTorch Dataset | `Dataset` |
-
-4. **Optional methods:**
-
-| Method | Description | Default |
-|--------|-------------|---------|
-| `validate_args(args)` | Validate CLI arguments | No-op |
-| `get_required_args()` | List required arg names | `[]` |
-| `get_output_names(**kwargs)` | Names of outputs | `None` |
-| `get_default_loss()` | Default loss function | `'mse'` or `'ce'` |
-| `get_default_batch_size()` | Default batch size | `16` |
-
-### Example: Complete Custom Adapter
-
-See `examples/custom_dataset_adapter.py` for a complete, well-documented example.
-
-### Built-in Adapters
-
-The framework includes these built-in dataset adapters:
-
-| Name | Task | Description |
-|------|------|-------------|
-| `HEST` | Regression | Spatial transcriptomics gene expression |
-| `WSICLASS` | Classification | Whole slide image classification |
-
-You can view their implementations in `utils/dataset_adapter.py` as reference.
+Splits are automatically saved to `output_dir/` for reproducibility.
 
 ---
 
 ## Examples
 
-### Example 1: Full Pipeline (Fine-tune → Distill → Evaluate)
+### Compare Gene Selection Strategies
 
 ```bash
-# Step 1: Fine-tune UNI2 on highly variable genes
-python -m pipeline.finetune \
-    --dataset HEST \
-    --model_name UNI2 \
-    --patches_path data/patches/ \
-    --adata_path data/st/ \
-    --filter_strategy highly_variable \
-    --n_genes 100 \
-    --output_dir runs/uni2_hvg/ \
-    --batch_size 16 \
-    --epochs 50 \
-    --hf_path hf_key.txt
-
-# Step 2: Distill into TinyViT
-python -m pipeline.distill \
-    --dataset HEST \
-    --teacher_model UNI2 \
-    --teacher_path runs/uni2_hvg/checkpoints/model_epoch50 \
-    --student_model TINYVIT \
-    --patches_path data/patches/ \
-    --adata_path data/st/ \
-    --gene_list_path runs/uni2_hvg/gene_list.pkl \
-    --filter_strategy custom \
-    --output_dir runs/tinyvit_distilled/ \
-    --batch_size 16 \
-    --epochs 50 \
-    --hf_path hf_key.txt
-
-# Step 3: Evaluate both models
-python -m pipeline.evaluate \
-    --dataset HEST \
-    --model_name UNI2 \
-    --model_path runs/uni2_hvg/checkpoints/model_epoch50 \
-    --patches_path data/patches/ \
-    --adata_path data/st/ \
-    --gene_list_path runs/uni2_hvg/gene_list.pkl \
-    --output_dir runs/uni2_hvg/eval/ \
-    --compute_spatial \
-    --hf_path hf_key.txt
-
-python -m pipeline.evaluate \
-    --dataset HEST \
-    --model_name TINYVIT \
-    --model_path runs/tinyvit_distilled/checkpoints/model_epoch50 \
-    --patches_path data/patches/ \
-    --adata_path data/st/ \
-    --gene_list_path runs/uni2_hvg/gene_list.pkl \
-    --output_dir runs/tinyvit_distilled/eval/ \
-    --compute_spatial \
-    --hf_path hf_key.txt
-```
-
-### Example 2: Run Standardized Benchmarks
-
-```bash
-# List available benchmarks
-python -m pipeline.finetune --list_benchmarks
-
-# Run the HVG100 benchmark with UNI2
-python -m pipeline.finetune \
-    --benchmark HEST_HVG100 \
-    --model_name UNI2 \
-    --output_dir runs/benchmark_uni2_hvg100/ \
-    --hf_path hf_key.txt
-
-# Distill to TinyViT using same benchmark
-python -m pipeline.distill \
-    --benchmark HEST_HVG100 \
-    --teacher_model UNI2 \
-    --teacher_path runs/benchmark_uni2_hvg100/checkpoints/model_epoch100 \
-    --student_model TINYVIT \
-    --output_dir runs/benchmark_tinyvit_hvg100/ \
-    --hf_path hf_key.txt
-
-# Evaluate both
-python -m pipeline.evaluate \
-    --benchmark HEST_HVG100 \
-    --model_name UNI2 \
-    --model_path runs/benchmark_uni2_hvg100/checkpoints/model_epoch100 \
-    --gene_list_path runs/benchmark_uni2_hvg100/gene_list.pkl \
-    --output_dir runs/benchmark_uni2_hvg100/eval/ \
-    --compute_spatial \
-    --hf_path hf_key.txt
-```
-
-### Example 3: Compare Target Selection Strategies (Benchmark Study)
-
-```bash
-# Run experiments with different gene selection strategies using benchmarks
-for benchmark in HEST_RANDOM100 HEST_HVG100 HEST_SVG100; do
+for strategy in random hvg svg; do
     python -m pipeline.finetune \
-        --benchmark $benchmark \
-        --model_name UNI2 \
-        --output_dir runs/${benchmark}_uni2/ \
-        --hf_path hf_key.txt
-    
-    python -m pipeline.evaluate \
-        --benchmark $benchmark \
-        --model_name UNI2 \
-        --model_path runs/${benchmark}_uni2/checkpoints/model_epoch100 \
-        --gene_list_path runs/${benchmark}_uni2/gene_list.pkl \
-        --output_dir runs/${benchmark}_uni2/eval/ \
-        --compute_spatial \
-        --hf_path hf_key.txt
-done
-```
-
-### Example 4: Compare Target Selection Strategies (Manual)
-
-```bash
-# Run experiments with different gene selection strategies
-for strategy in random highly_variable spatially_variable; do
-    python -m pipeline.finetune \
-        --dataset HEST \
-        --model_name UNI2 \
-        --patches_path data/patches/ \
-        --adata_path data/st/ \
+        --patches_path /data/patches/ \
+        --adata_path /data/st/ \
         --filter_strategy $strategy \
         --n_genes 100 \
-        --output_dir runs/compare_${strategy}/ \
-        --epochs 50 \
-        --hf_path hf_key.txt
-    
-    python -m pipeline.evaluate \
-        --dataset HEST \
-        --model_name UNI2 \
-        --model_path runs/compare_${strategy}/checkpoints/model_epoch50 \
-        --patches_path data/patches/ \
-        --adata_path data/st/ \
-        --gene_list_path runs/compare_${strategy}/gene_list.pkl \
-        --output_dir runs/compare_${strategy}/eval/ \
-        --compute_spatial \
-        --hf_path hf_key.txt
+        --output_dir ./results/${strategy}
 done
 ```
 
-### Example 5: Train Lightweight Model Without Distillation
+### Full Pipeline: Fine-tune → Distill → Evaluate
 
 ```bash
-# Train TinyViT directly (no teacher)
+# 1. Fine-tune foundation model
 python -m pipeline.finetune \
-    --dataset HEST \
-    --model_name TINYVIT \
-    --patches_path data/patches/ \
-    --adata_path data/st/ \
-    --filter_strategy highly_variable \
-    --n_genes 100 \
-    --output_dir runs/tinyvit_direct/ \
-    --batch_size 32 \
-    --epochs 100 \
-    --hf_path hf_key.txt
-```
+    --patches_path /data/patches/ --adata_path /data/st/ \
+    --model uni2 --filter_strategy hvg --n_genes 100 \
+    --output_dir ./results/uni2
 
-### Example 6: Using Custom Train/Val Splits
-
-```bash
-# Create split files
-echo -e "SAMPLE_001\nSAMPLE_002\nSAMPLE_003" > splits/train.txt
-echo -e "SAMPLE_004\nSAMPLE_005" > splits/val.txt
-
-# Train with custom splits
-python -m pipeline.finetune \
-    --dataset HEST \
-    --model_name UNI2 \
-    --patches_path data/patches/ \
-    --adata_path data/st/ \
-    --train_split splits/train.txt \
-    --val_split splits/val.txt \
-    --filter_strategy highly_variable \
-    --n_genes 100 \
-    --output_dir runs/custom_split/ \
-    --hf_path hf_key.txt
-```
-
-### Example 7: WSI Classification
-
-```bash
-# Fine-tune for WSI classification
-python -m pipeline.finetune \
-    --dataset WSICLASS \
-    --model_name UNI2 \
-    --patches_path wsi_data/patches/ \
-    --metadata_path wsi_data/metadata.csv \
-    --num_classes 5 \
-    --output_dir runs/wsi_classify/ \
-    --loss_fn ce \
-    --epochs 50 \
-    --hf_path hf_key.txt
-
-# Evaluate
-python -m pipeline.evaluate \
-    --dataset WSICLASS \
-    --model_name UNI2 \
-    --model_path runs/wsi_classify/checkpoints/model_epoch50 \
-    --patches_path wsi_data/patches/ \
-    --metadata_path wsi_data/metadata.csv \
-    --num_classes 5 \
-    --output_dir runs/wsi_classify/eval/ \
-    --hf_path hf_key.txt
-```
-
-### Example 8: Using a Custom Dataset
-
-```bash
-# Create your custom adapter (see examples/custom_dataset_adapter.py)
-
-# Fine-tune with custom dataset
-python -m pipeline.finetune \
-    --dataset MYDATASET \
-    --custom_adapter examples/custom_dataset_adapter.py \
-    --model_name UNI2 \
-    --patches_path my_data/patches/ \
-    --labels_path my_data/labels.csv \
-    --output_dir runs/custom_experiment/ \
-    --batch_size 16 \
-    --epochs 50 \
-    --hf_path hf_key.txt
-
-# Distill to lightweight model
+# 2. Distill to lightweight model
 python -m pipeline.distill \
-    --dataset MYDATASET \
-    --custom_adapter examples/custom_dataset_adapter.py \
-    --teacher_model UNI2 \
-    --teacher_path runs/custom_experiment/checkpoints/model_epoch50 \
-    --student_model TINYVIT \
-    --patches_path my_data/patches/ \
-    --labels_path my_data/labels.csv \
-    --output_dir runs/custom_distill/ \
-    --batch_size 16 \
-    --epochs 50 \
-    --hf_path hf_key.txt
+    --patches_path /data/patches/ --adata_path /data/st/ \
+    --teacher uni2 --student tinyvit \
+    --gene_list_path ./results/uni2/gene_list.pkl \
+    --output_dir ./results/distill
 
-# Evaluate
+# 3. Evaluate both
 python -m pipeline.evaluate \
-    --dataset MYDATASET \
-    --custom_adapter examples/custom_dataset_adapter.py \
-    --model_name TINYVIT \
-    --model_path runs/custom_distill/checkpoints/model_epoch50 \
-    --patches_path my_data/patches/ \
-    --labels_path my_data/labels.csv \
-    --output_dir runs/custom_distill/eval/ \
-    --hf_path hf_key.txt
+    --model_path ./results/uni2/model_epoch99 \
+    --config_path ./results/uni2/config.json \
+    --output_dir ./results/uni2/eval --compute_spatial
+
+python -m pipeline.evaluate \
+    --model_path ./results/distill/model_epoch99 \
+    --config_path ./results/distill/config.json \
+    --output_dir ./results/distill/eval --compute_spatial
 ```
 
 ---
 
-## Data Format Requirements
+## Project Structure
 
-### HEST Dataset
-
-**Patches Directory:**
 ```
-patches_path/
-├── SAMPLE_001.h5    # H5 file with 'img' and 'barcode' datasets
-├── SAMPLE_002.h5
-└── ...
-```
-
-**AnnData Directory:**
-```
-adata_path/
-├── SAMPLE_001.h5ad  # AnnData with expression matrix and spatial coords
-├── SAMPLE_002.h5ad
-└── ...
-```
-
-### WSICLASS Dataset
-
-**Patches Directory:**
-```
-patches_path/
-├── SAMPLE_001.npy   # Shape: (N_patches, H, W, 3)
-├── SAMPLE_002.npy
-└── ...
-```
-
-**Metadata CSV:**
-```csv
-sample_id,class
-SAMPLE_001,0
-SAMPLE_002,1
-SAMPLE_003,2
+knowledge_distillation_histopath/
+├── pipeline/
+│   ├── finetune.py          # Fine-tuning script
+│   ├── distill.py           # Knowledge distillation script
+│   └── evaluate.py          # Evaluation script
+│
+├── utils/
+│   ├── gene_filtering.py    # Random, HVG, SVG selection
+│   ├── split_utils.py       # Train/val split management
+│   ├── spatial_metrics.py   # SSIM calculations
+│   ├── benchmarks.py        # Predefined benchmark configs
+│   ├── dataset_adapter.py   # Custom dataset system
+│   ├── data_utils.py        # HEST dataset class
+│   ├── train_HEST.py        # Training loops
+│   └── custom_losses.py     # Distillation losses
+│
+├── modeling/
+│   ├── models.py            # Model loaders
+│   └── tinyvit/             # TinyViT architecture
+│
+└── examples/
+    └── custom_dataset_adapter.py  # Template for custom data
 ```
 
 ---
 
 ## License
 
-[Add license information]
+[Add license]
 
 ## Citation
 
-[Add citation information]
-
+[Add citation]

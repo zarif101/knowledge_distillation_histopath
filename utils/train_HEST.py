@@ -222,23 +222,33 @@ def eval_single(model, val_loader, loss_fn, device):
     model.train()
     return val_loss, all_true, all_pred
 
-def finetune_HEST_data(patches_path, adata_path, train_samples, val_samples, gene_list_path, log_dir, model, transforms, loss_fn,
-                      hyperparams_dict):
+def finetune_HEST_data(patches_path, adata_path, train_samples, val_samples, gene_list, log_dir, model, transforms,
+                      hyperparams_dict, loss_fn=None):
     '''
     Finetune a foundation model (ex: UNI2) on HEST data. Task: Infer gene expression profiles from input patches.
 
-    hyperparams_dict: batch_size, learning_rate, epochs
+    Args:
+        patches_path: Path to directory with H5 patch files
+        adata_path: Path to directory with h5ad expression files
+        train_samples: List of training sample IDs
+        val_samples: List of validation sample IDs
+        gene_list: List of gene names OR path to pickle file
+        log_dir: Directory for logs and model checkpoints
+        model: Model to fine-tune
+        transforms: Image transforms
+        hyperparams_dict: Dict with batch_size, learning_rate, epochs
+        loss_fn: Loss function (default: MSELoss)
     '''
-    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_samples, gene_list_path, transforms)
+    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_samples, gene_list, transforms)
     batch_size=hyperparams_dict['batch_size'] 
     train_loader=DataLoader(train_dset, batch_size=batch_size, shuffle=True)
     
-    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list_path, transforms)
+    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list, transforms)
     val_loader=DataLoader(val_dset, batch_size=batch_size)
 
-    device=torch.device('cuda')
-    #loss_fn=torch.nn.MSELoss()
-    loss_fn=loss_fn
+    device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if loss_fn is None:
+        loss_fn = torch.nn.MSELoss()
     LR=hyperparams_dict['learning_rate']
     optim=torch.optim.Adam(model.parameters(),lr=LR)
     epochs=hyperparams_dict['epochs']
@@ -250,22 +260,34 @@ def finetune_HEST_data(patches_path, adata_path, train_samples, val_samples, gen
     train_single(model, train_loader, val_loader, loss_fn, optim, epochs,
          device,log_path,model_save_dir)
 
-def distill_HEST_data(patches_path, adata_path, train_samples, val_samples, gene_list_path, log_dir, teacher_model,
-                      student_model, transforms, loss_fn, hyperparams_dict):
+def distill_HEST_data(patches_path, adata_path, train_samples, val_samples, gene_list, log_dir, teacher_model,
+                      student_model, transforms, hyperparams_dict, loss_fn=None):
     '''
     Distill a task-specific foundation model into a lightweight student model. Task: Infer gene expression profiles from input patches.
 
-    hyperparams_dict: batch_size, learning_rate, epochs
+    Args:
+        patches_path: Path to directory with H5 patch files
+        adata_path: Path to directory with h5ad expression files
+        train_samples: List of training sample IDs
+        val_samples: List of validation sample IDs
+        gene_list: List of gene names OR path to pickle file
+        log_dir: Directory for logs and model checkpoints
+        teacher_model: Teacher model (frozen)
+        student_model: Student model to train
+        transforms: Image transforms
+        hyperparams_dict: Dict with batch_size, learning_rate, epochs
+        loss_fn: Distillation loss function (default: DistillationLoss)
     '''
-    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_samples, gene_list_path, transforms)
+    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_samples, gene_list, transforms)
     batch_size=hyperparams_dict['batch_size'] 
     train_loader=DataLoader(train_dset, batch_size=batch_size, shuffle=True)
     
-    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list_path, transforms)
+    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list, transforms)
     val_loader=DataLoader(val_dset, batch_size=batch_size)
 
-    device=torch.device('cuda')
-    loss_fn=loss_fn
+    device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if loss_fn is None:
+        loss_fn = custom_losses.DistillationLoss()
     LR=hyperparams_dict['learning_rate']
     optim=torch.optim.Adam(student_model.parameters(),lr=LR)
     epochs=hyperparams_dict['epochs']
@@ -281,22 +303,35 @@ def distill_HEST_data(patches_path, adata_path, train_samples, val_samples, gene
     #This example usage is doing distillation at the output level. 
 
 
-def distill_HEST_data_featurelevel(patches_path, adata_path, train_samples, val_samples, gene_list_path, log_dir, teacher_model,
-                      student_model, transforms, loss_fn, hyperparams_dict):
+def distill_HEST_data_featurelevel(patches_path, adata_path, train_samples, val_samples, gene_list, log_dir, teacher_model,
+                      student_model, transforms, hyperparams_dict, loss_fn=None):
     '''
-    Distill a task-specific foundation model into a lightweight student model. Task: Infer gene expression profiles from input patches.
+    Distill a task-specific foundation model into a lightweight student model using feature-level alignment.
+    Task: Infer gene expression profiles from input patches.
 
-    hyperparams_dict: batch_size, learning_rate, epochs
+    Args:
+        patches_path: Path to directory with H5 patch files
+        adata_path: Path to directory with h5ad expression files
+        train_samples: List of training sample IDs
+        val_samples: List of validation sample IDs
+        gene_list: List of gene names OR path to pickle file
+        log_dir: Directory for logs and model checkpoints
+        teacher_model: Teacher model (frozen)
+        student_model: Student model to train
+        transforms: Image transforms
+        hyperparams_dict: Dict with batch_size, learning_rate, epochs
+        loss_fn: Feature-level distillation loss (default: FeatureLevelDistillationLoss)
     '''
-    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_samples, gene_list_path, transforms)
+    train_dset = data_utils.STPatchDatasetHEST(patches_path, adata_path, train_samples, gene_list, transforms)
     batch_size=hyperparams_dict['batch_size'] 
     train_loader=DataLoader(train_dset, batch_size=batch_size, shuffle=True)
     
-    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list_path, transforms)
+    val_dset=data_utils.STPatchDatasetHEST(patches_path, adata_path, val_samples, gene_list, transforms)
     val_loader=DataLoader(val_dset, batch_size=batch_size)
 
-    device=torch.device('cuda')
-    loss_fn=loss_fn
+    device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if loss_fn is None:
+        loss_fn = custom_losses.FeatureLevelDistillationLoss()
     LR=hyperparams_dict['learning_rate']
     optim=torch.optim.Adam(student_model.parameters(),lr=LR)
     epochs=hyperparams_dict['epochs']

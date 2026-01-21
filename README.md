@@ -17,6 +17,20 @@ The framework includes plug-and-play Python scripts that train and evaluate mode
 
 ## Installation
 
+### Option 1: Conda (Recommended)
+
+```bash
+# Clone the repository
+git clone <repository_url>
+cd stainfactor
+
+# Create environment from specification
+conda env create -f environment.yml
+conda activate stainfactor
+```
+
+### Option 2: Pip
+
 ```bash
 # Clone the repository
 git clone <repository_url>
@@ -26,9 +40,7 @@ cd stainfactor
 pip install torch torchvision timm scanpy h5py scikit-learn scipy pandas numpy
 pip install huggingface_hub    # For foundation models (UNI2, Virchow2)
 pip install scikit-image       # For SSIM spatial metrics
-
-# Optional: for Moran's I spatial gene selection
-pip install squidpy
+pip install gseapy             # For pathway analysis (figure reproduction)
 ```
 
 ---
@@ -398,9 +410,55 @@ knowledge_distillation_histopath/
 │   ├── models.py            # Model loaders
 │   └── tinyvit/             # TinyViT architecture
 │
-└── examples/
-    └── custom_dataset_adapter.py  # Template for custom data
+├── examples/
+│   └── custom_dataset_adapter.py  # Template for custom data
+│
+├── reproduce/                     # Figure reproduction scripts
+│   ├── README.md                  # Instructions
+│   ├── run_experiments.py         # Step 1: Train all models
+│   └── generate_figures.py        # Step 2: Generate paper figures
+│
+└── environment.yml                # Conda environment specification
 ```
+
+---
+
+## Environment Setup
+
+For a complete, reproducible environment, use the provided `environment.yml`:
+
+```bash
+# Create conda environment
+conda env create -f environment.yml
+conda activate stainfactor
+
+# Verify installation
+python -c "import torch; print(torch.__version__)"
+```
+
+---
+
+## Reproducing Paper Figures
+
+The `reproduce/` directory contains scripts to regenerate all results figures:
+
+```bash
+cd reproduce
+
+# Step 1: Run all experiments (trains models, runs evaluation)
+python run_experiments.py --data_root /path/to/hest_data --output_dir ./outputs
+
+# Step 2: Generate figures from results
+python generate_figures.py --results_dir ./outputs --output_dir ./figures
+```
+
+**Using your own results:** If you ran experiments separately, point to your results:
+
+```bash
+python generate_figures.py --results_dir /path/to/your/results
+```
+
+See `reproduce/README.md` for detailed instructions, expected data formats, and customization options.
 
 ---
 

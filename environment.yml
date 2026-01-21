@@ -1,0 +1,72 @@
+# StainFactor Environment Specification
+# For reproducing experiments and figures
+#
+# Installation:
+#   conda env create -f environment.yml
+#   conda activate stainfactor
+#
+# Note: Adjust pytorch-cuda version based on your system's CUDA version
+#       Run `nvidia-smi` to check your CUDA version
+
+name: stainfactor
+
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python
+  - python=3.10
+
+  # PyTorch ecosystem (adjust cuda version as needed)
+  - pytorch>=2.0
+  - torchvision>=0.15
+  - pytorch-cuda=11.8  # Change to 12.1 if using CUDA 12.x
+
+  # Core scientific computing
+  - numpy>=1.24
+  - pandas>=2.0
+  - scipy>=1.10
+
+  # Machine learning
+  - scikit-learn>=1.2
+  - scikit-image>=0.21  # For SSIM computation
+
+  # Visualization
+  - matplotlib>=3.7
+  - seaborn>=0.12
+
+  # Single-cell / spatial transcriptomics
+  - scanpy>=1.9
+  - anndata>=0.9
+
+  # Data handling
+  - h5py>=3.8
+  - pillow>=9.4
+
+  # Progress bars
+  - tqdm>=4.65
+
+  # Pip dependencies (not available via conda)
+  - pip
+  - pip:
+    # Model libraries
+    - timm>=0.9
+    - huggingface_hub>=0.16
+    
+    # PyTorch Geometric (for graph-based operations)
+    - torch_geometric>=2.3
+    
+    # Pathway analysis (for figure reproduction)
+    - gseapy>=1.0
+    
+    # TinyViT (if not included locally)
+    # - tinyvit  # Uncomment if installing from PyPI
+
+# Optional: For development/testing
+# - pytest
+# - black
+# - flake8
+

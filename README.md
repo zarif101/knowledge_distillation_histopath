@@ -176,22 +176,57 @@ Evaluate a trained model.
 
 ## Predefined Benchmarks
 
-Run standardized experiments with predefined configurations:
+Benchmarks are **shortcuts** that auto-fill data paths, gene filtering strategy, and hyperparameters. Instead of typing all arguments manually, just use `--benchmark`:
 
 ```bash
-# List available benchmarks
-python -m pipeline.finetune --list_benchmarks
+# Without benchmark (verbose):
+python -m pipeline.finetune \
+    --patches_path /multimodal/dist/hest_data_lung/patches/ \
+    --adata_path /multimodal/dist/hest_data_lung/st/ \
+    --filter_strategy hvg --n_genes 100 \
+    --learning_rate 1e-4 --batch_size 32 --epochs 100 \
+    --output_dir ./results
 
-# Run a benchmark
-python -m pipeline.finetune --benchmark hest_hvg_100 --output_dir ./results
+# With benchmark (simple):
+python -m pipeline.finetune --benchmark lung_hvg_100 --output_dir ./results
 ```
 
-**Available benchmarks:**
-- `hest_random_50`, `hest_random_100`
-- `hest_hvg_50`, `hest_hvg_100`
-- `hest_svg_50`, `hest_svg_100`
+### Available Benchmarks
 
-**Setup:** Edit `utils/benchmarks.py` and fill in your data paths.
+4 tissue types × 3 strategies × 2 gene counts = **24 benchmarks**
+
+| Tissue | Benchmarks |
+|--------|------------|
+| **Lung** | `lung_random_50`, `lung_random_100`, `lung_hvg_50`, `lung_hvg_100`, `lung_svg_50`, `lung_svg_100` |
+| **Breast** | `breast_random_50`, `breast_random_100`, `breast_hvg_50`, `breast_hvg_100`, `breast_svg_50`, `breast_svg_100` |
+| **Colon** | `colon_random_50`, `colon_random_100`, `colon_hvg_50`, `colon_hvg_100`, `colon_svg_50`, `colon_svg_100` |
+| **Prostate** | `prostate_random_50`, `prostate_random_100`, `prostate_hvg_50`, `prostate_hvg_100`, `prostate_svg_50`, `prostate_svg_100` |
+
+### List All Benchmarks
+
+```bash
+python -m pipeline.finetune --list_benchmarks
+```
+
+### Override Benchmark Settings
+
+CLI arguments override benchmark defaults:
+
+```bash
+# Use lung_hvg_100 but with different epochs and learning rate
+python -m pipeline.finetune --benchmark lung_hvg_100 --epochs 50 --learning_rate 5e-5 --output_dir ./results
+```
+
+### Configure Paths
+
+Benchmarks use paths defined in `utils/benchmarks.py`. The default base path is:
+```
+/multimodal/dist/hest_data_{tissue}/
+├── patches/
+└── st/
+```
+
+To change the base path, edit `HEST_BASE_PATH` in `utils/benchmarks.py`.
 
 ---
 

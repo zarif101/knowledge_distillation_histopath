@@ -117,6 +117,13 @@ python -m pipeline.evaluate \
     --config_path ./results/finetune/config.json \
     --output_dir ./results/eval \
     --compute_spatial
+
+# With predicted expression output
+python -m pipeline.evaluate \
+    --model_path ./results/finetune/model_epoch99 \
+    --config_path ./results/finetune/config.json \
+    --output_dir ./results/eval \
+    --save_predictions
 ```
 
 ---
@@ -124,6 +131,8 @@ python -m pipeline.evaluate \
 ## HEST Data Format
 
 The pipeline is designed for **HEST-format** spatial transcriptomics data. This format works for any tissue type (lung, breast, skin, etc.):
+
+### Input Format
 
 ```
 your_data/
@@ -139,10 +148,25 @@ your_data/
 ```
 
 **H5 patch files** contain:
-- `img`: Array of patch images
-- `barcode`: Array of spot barcodes
+- `img`: Array of patch images (N_patches, H, W, 3)
+- `barcode`: Array of spot barcodes for alignment with expression data
 
-**h5ad files** are standard AnnData objects with gene expression matrices.
+**h5ad files** are standard AnnData objects with:
+- Gene expression matrix (`adata.X`)
+- Spatial coordinates (`adata.obsm['spatial']` or `adata.obs['array_row']`, `adata.obs['array_col']`)
+- Spot barcodes (`adata.obs_names`)
+
+### Output Format
+
+**Trained Models:** PyTorch checkpoint files (`.pth` format) saved during training.
+
+**Evaluation Metrics:** JSON and CSV files with performance metrics (MSE, R², Pearson, Spearman, SSIM).
+
+**Predicted Expression (optional):** When using `--save_predictions` during evaluation, the framework generates `.h5ad` files containing predicted gene expression values. These files:
+- Maintain the same structure as input `.h5ad` files (spatial coordinates, metadata preserved)
+- Contain predicted expression values instead of ground truth
+- Are saved as `{SAMPLE_ID}_predicted.h5ad` in the `predictions/` subdirectory
+- Can be used for downstream analysis, visualization, or comparison with ground truth
 
 ---
 
@@ -223,6 +247,7 @@ Evaluate a trained model.
 | `--eval_split_path` | Custom evaluation samples | None |
 | `--use_val` | Use val split from training | False |
 | `--compute_spatial` | Compute SSIM metrics | False |
+| `--save_predictions` | Save predicted expression as h5ad files | False |
 | *(plus patches_path, adata_path, gene_list_path)* | | |
 
 ---
@@ -300,8 +325,14 @@ output_dir/
 
 eval/
 ├── metrics.json          # All metrics
-└── per_gene_metrics.csv  # Per-gene breakdown
+├── per_gene_metrics.csv  # Per-gene breakdown
+└── predictions/          # (if --save_predictions used)
+    ├── SAMPLE_001_predicted.h5ad
+    ├── SAMPLE_002_predicted.h5ad
+    └── ...
 ```
+
+**Predicted Expression Files:** When using `--save_predictions`, the evaluation script saves predicted gene expression values as `.h5ad` files (one per sample) in the `predictions/` subdirectory. These files maintain the same structure as input `.h5ad` files (spatial coordinates, metadata) but contain predicted expression values instead of ground truth.
 
 ---
 
@@ -499,18 +530,20 @@ python -m pipeline.distill \
     --gene_list_path ./results/uni2_breast/gene_list.pkl \
     --output_dir ./results/distill_breast
 
-# 3. Evaluate with spatial SSIM metrics
+# 3. Evaluate with spatial SSIM metrics and save predictions
 python -m pipeline.evaluate \
     --model_path ./results/uni2_breast/model_epoch99 \
     --config_path ./results/uni2_breast/config.json \
     --output_dir ./results/uni2_breast/eval \
-    --compute_spatial
+    --compute_spatial \
+    --save_predictions
 
 python -m pipeline.evaluate \
     --model_path ./results/distill_breast/model_epoch99 \
     --config_path ./results/distill_breast/config.json \
     --output_dir ./results/distill_breast/eval \
-    --compute_spatial
+    --compute_spatial \
+    --save_predictions
 ```
 
 ### Example 7: Hyperparameter Tuning

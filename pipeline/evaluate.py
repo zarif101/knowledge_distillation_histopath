@@ -71,6 +71,10 @@ def parse_args():
     parser.add_argument('--compute_spatial', action='store_true',
                         help='Compute spatial SSIM metrics (HEST only)')
     
+    # Save predictions
+    parser.add_argument('--save_predictions', action='store_true',
+                        help='Save predicted expression as h5ad files (HEST only)')
+    
     # Output
     parser.add_argument('--output_dir', type=str, required=True)
     parser.add_argument('--batch_size', type=int, default=32)
@@ -151,6 +155,88 @@ def get_sample_ids_from_h5_dir(directory: str) -> list:
     return sorted([f.stem for f in Path(directory).glob("*.h5")])
 
 
+def save_predictions_as_h5ad(
+    y_pred: np.ndarray,
+    eval_samples: list,
+    adata_path: str,
+    patches_path: str,
+    gene_list: list,
+    output_dir: Path
+):
+    """
+    Save predictions as h5ad files, one per sample.
+    
+    Maps predictions back to samples by loading each sample's adata and matching
+    patch counts. Creates new h5ad files with predicted expression values.
+    """
+    import scanpy as sc
+    from utils.data_utils import read_h5_patches, align_st_patches
+    
+    predictions_dir = output_dir / 'predictions'
+    predictions_dir.mkdir(exist_ok=True)
+    
+    print(f"\nSaving predictions to {predictions_dir}...")
+    
+    pred_idx = 0
+    for sample_id in eval_samples:
+        # Load original adata to get structure
+        adata_file = Path(adata_path) / f"{sample_id}.h5ad"
+        if not adata_file.exists():
+            print(f"Warning: {adata_file} not found, skipping {sample_id}")
+            continue
+        
+        # Load patches and adata to get alignment
+        patch_path = Path(patches_path) / f"{sample_id}.h5"
+        if not patch_path.exists():
+            print(f"Warning: {patch_path} not found, skipping {sample_id}")
+            continue
+        
+        patches, barcodes = read_h5_patches(str(patch_path))
+        adata = sc.read_h5ad(adata_file)
+        patches_aligned, adata_aligned = align_st_patches((patches, barcodes), adata)
+        
+        n_spots = adata_aligned.shape[0]
+        
+        # Extract predictions for this sample
+        sample_preds = y_pred[pred_idx:pred_idx + n_spots]
+        pred_idx += n_spots
+        
+        # Create new adata with predicted expression
+        # Apply same preprocessing as dataset (normalize_total, log1p) for structure consistency
+        pred_adata = adata_aligned.copy()
+        pred_adata.var_names = pred_adata.var_names.str.upper()
+        sc.pp.normalize_total(pred_adata)
+        sc.pp.log1p(pred_adata)
+        
+        # Filter to selected genes (same as dataset does)
+        # This keeps genes in adata.var_names order (filtered)
+        pred_adata = pred_adata[:, pred_adata.var_names.isin(gene_list)]
+        
+        # Get available genes in adata order (this is the order predictions are in)
+        available_genes = list(pred_adata.var_names)
+        
+        # Map predictions: predictions are in gene_list order, need to reorder to adata order
+        # Create mapping from gene_list indices to adata column positions
+        gene_to_idx = {gene: idx for idx, gene in enumerate(gene_list)}
+        adata_col_indices = [gene_to_idx[g] for g in available_genes if g in gene_to_idx]
+        
+        # Extract and reorder predictions to match adata gene order
+        sample_preds_reordered = sample_preds[:, adata_col_indices]
+        
+        # Set predicted expression (predictions are already in normalized/log1p space)
+        # Convert to dense if sparse
+        if hasattr(pred_adata.X, 'toarray'):
+            pred_adata.X = pred_adata.X.toarray()
+        pred_adata.X = sample_preds_reordered
+        
+        # Save
+        output_file = predictions_dir / f"{sample_id}_predicted.h5ad"
+        pred_adata.write(output_file)
+        print(f"  Saved {sample_id}: {n_spots} spots, {len(available_genes)} genes -> {output_file}")
+    
+    print(f"Predictions saved to: {predictions_dir}")
+
+
 def run_hest_eval(args, output_dir, device, config):
     """Evaluate HEST model."""
     from utils.gene_filtering import load_gene_list
@@ -219,6 +305,13 @@ def run_hest_eval(args, output_dir, device, config):
         adata = sc.read_h5ad(Path(adata_path) / f"{eval_samples[0]}.h5ad")
         spatial = compute_spatial_metrics(y_true, y_pred, adata, gene_list)
         metrics['spatial'] = spatial
+    
+    # Save predictions as h5ad files
+    if args.save_predictions:
+        save_predictions_as_h5ad(
+            y_pred, eval_samples, adata_path, patches_path, 
+            gene_list, output_dir
+        )
     
     return metrics, gene_list
 

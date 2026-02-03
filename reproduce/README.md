@@ -21,33 +21,46 @@ These benchmarks are defined in `utils/benchmarks.py` and represent the exact co
 
 All data is publicly available from the [HEST dataset on HuggingFace](https://huggingface.co/datasets/MahmoodLab/hest).
 
-**Step 1: Setup HuggingFace Access**
+**Prerequisites:**
+1. Create a [HuggingFace account](https://huggingface.co/join)
+2. Accept the [HEST terms of use](https://huggingface.co/datasets/MahmoodLab/hest)
+3. Get your [access token](https://huggingface.co/settings/tokens)
+
+**Paper Filters:** Our experiments used the following filters on HEST data:
+- Human samples only (`species == 'Homo sapiens'`)
+- Xenium technology excluded (`st_technology != 'Xenium'`)
+
+#### Option 1: Download Script (Recommended)
+
+Use the provided script to download with paper filters:
 
 ```bash
-pip install huggingface-hub
+# Download all paper tissues with paper filters
+python scripts/download_hest.py --tissue all --output_dir ./hest_data --paper_filters --token YOUR_HF_TOKEN
+
+# Or download specific tissues
+python scripts/download_hest.py --tissue lung --output_dir ./hest_data --paper_filters --token YOUR_HF_TOKEN
 ```
 
-```python
-from huggingface_hub import login
-login(token="YOUR_HUGGINGFACE_TOKEN")
-```
+This automatically organizes data into the expected directory structure.
 
-You need to accept the HEST terms of use on the [dataset page](https://huggingface.co/datasets/MahmoodLab/hest) first.
-
-**Step 2: Download Specific Tissues**
-
-To download only the tissues used in the paper (recommended):
+#### Option 2: Manual Download
 
 ```python
-import os
-from huggingface_hub import snapshot_download
+from huggingface_hub import snapshot_download, login
 import pandas as pd
+
+login(token="YOUR_HUGGINGFACE_TOKEN")
 
 local_dir = 'hest_data'
 repo_id = 'MahmoodLab/hest'
 
-# Load metadata to filter by organ
+# Load metadata
 meta_df = pd.read_csv("hf://datasets/MahmoodLab/hest/HEST_v1_2_1.csv")
+
+# Apply paper filters
+meta_df = meta_df[meta_df['species'] == 'Homo sapiens']
+meta_df = meta_df[meta_df['st_technology'] != 'Xenium']
 
 # Download lung samples
 lung_ids = meta_df[meta_df['organ'] == 'Lung']['id'].values
@@ -57,9 +70,7 @@ snapshot_download(repo_id=repo_id, allow_patterns=lung_patterns, repo_type="data
 # Repeat for: Breast, Colon, Prostate, Skin
 ```
 
-**Step 3: Organize Data**
-
-After downloading, organize the data so each tissue type has its own directory:
+After downloading, organize into:
 
 ```
 hest_data/
@@ -80,7 +91,7 @@ hest_data/
     └── st/
 ```
 
-For full HEST documentation and additional download options, see: https://huggingface.co/datasets/MahmoodLab/hest
+For full HEST documentation: https://huggingface.co/datasets/MahmoodLab/hest
 
 ---
 

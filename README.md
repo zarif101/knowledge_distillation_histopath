@@ -43,10 +43,79 @@ The framework includes plug-and-play Python scripts that train and evaluate mode
 
 The paper benchmarks use the publicly available [HEST dataset](https://huggingface.co/datasets/MahmoodLab/hest) (Jaume et al., 2024), which provides spatial transcriptomics data paired with H&E whole slide images across multiple tissue types.
 
-**Tissue types used in the paper:**
-- Lung, Breast, Colon, Prostate, Skin
+**Tissue types used in the paper:** Lung, Breast, Colon, Prostate, Skin
 
-See `reproduce/README.md` for detailed data download instructions.
+**Paper filters:** In our experiments, we filtered HEST data to include only:
+- **Human samples** (`species == 'Homo sapiens'`)
+- **Non-Xenium technologies** (`st_technology != 'Xenium'`)
+
+### Downloading HEST Data
+
+**Prerequisites:**
+1. Create a [HuggingFace account](https://huggingface.co/join)
+2. Accept the [HEST terms of use](https://huggingface.co/datasets/MahmoodLab/hest)
+3. Get your [access token](https://huggingface.co/settings/tokens)
+
+#### Option 1: Download Script (Recommended)
+
+Use the provided download script for easy setup:
+
+```bash
+# Download lung data with paper filters (human only, no Xenium)
+python scripts/download_hest.py --tissue lung --output_dir ./hest_data --paper_filters --token YOUR_HF_TOKEN
+
+# Download all paper tissues with paper filters
+python scripts/download_hest.py --tissue all --output_dir ./hest_data --paper_filters --token YOUR_HF_TOKEN
+
+# Download without filters (all samples for a tissue)
+python scripts/download_hest.py --tissue lung --output_dir ./hest_data --token YOUR_HF_TOKEN
+
+# List available tissues
+python scripts/download_hest.py --list_tissues
+```
+
+The script automatically organizes data into the expected directory structure.
+
+#### Option 2: Manual Download
+
+Download and organize data yourself using the HuggingFace Hub:
+
+```python
+from huggingface_hub import snapshot_download, login
+import pandas as pd
+
+# Authenticate
+login(token="YOUR_HF_TOKEN")
+
+# Load metadata
+meta_df = pd.read_csv("hf://datasets/MahmoodLab/hest/HEST_v1_2_1.csv")
+
+# Apply paper filters (optional but recommended for reproducing paper results)
+meta_df = meta_df[meta_df['species'] == 'Homo sapiens']
+meta_df = meta_df[meta_df['st_technology'] != 'Xenium']
+
+# Filter by organ and download
+lung_ids = meta_df[meta_df['organ'] == 'Lung']['id'].values
+lung_patterns = [f"*{id}[_.]**" for id in lung_ids]
+snapshot_download(
+    repo_id='MahmoodLab/hest',
+    allow_patterns=lung_patterns,
+    repo_type="dataset",
+    local_dir='./hest_data'
+)
+```
+
+After downloading, organize into:
+```
+hest_data/
+├── hest_data_lung/
+│   ├── patches/    # .h5 files
+│   └── st/         # .h5ad files
+├── hest_data_breast/
+│   ├── patches/
+│   └── st/
+└── ...
+```
 
 ---
 
@@ -612,6 +681,9 @@ knowledge_distillation_histopath/
 │
 ├── examples/
 │   └── custom_dataset_adapter.py  # Template for custom data
+│
+├── scripts/
+│   └── download_hest.py          # HEST data download utility
 │
 ├── reproduce/                     # Figure reproduction scripts
 │   ├── README.md                  # Instructions
